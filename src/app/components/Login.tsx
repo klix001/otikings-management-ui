@@ -1,0 +1,201 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router';
+import { Lock, Mail, ArrowRight } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+
+export default function Login() {
+  const navigate = useNavigate();
+  const [loginInput, setLoginInput] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      let resolvedEmail = loginInput.trim();
+      const isEmail = resolvedEmail.includes('@');
+
+      if (isEmail) {
+        // Email login: restricted to Admin/Super Admin
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+          email: resolvedEmail,
+          password,
+        });
+
+        if (authError) {
+          throw new Error(authError.message);
+        }
+
+        if (!data.user) {
+          throw new Error('User account not found.');
+        }
+
+        // Check user role from profiles table
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', data.user.id)
+          .single();
+
+        if (profileError) {
+          await supabase.auth.signOut();
+          throw new Error('Error fetching profile information.');
+        }
+
+        if (!profile) {
+          await supabase.auth.signOut();
+          throw new Error('User profile does not exist.');
+        }
+
+        const isAdmin = ['admin', 'super_admin', 'superadmin'].includes(profile.role);
+
+        if (!isAdmin) {
+          // If staff tries to log in using email, sign them out immediately
+          await supabase.auth.signOut();
+          throw new Error('Staff are not permitted to log in with an email address. Please use your Staff ID.');
+        }
+
+        navigate('/admin');
+      } else {
+        // Staff ID login: restricted to staff/admin roles (BAR/KIT/ADM prefixes)
+        const normalizedInput = resolvedEmail.toUpperCase();
+        const isBarId = normalizedInput.startsWith('BAR');
+        const isKitId = normalizedInput.startsWith('KIT');
+        const isAdminId = normalizedInput.startsWith('ADM');
+
+        if (!isBarId && !isKitId && !isAdminId) {
+          throw new Error('Staff ID must start with BAR, KIT, or ADM prefix.');
+        }
+
+        // Query profiles table to find the user with this staff_id
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('email, role')
+          .eq('staff_id', resolvedEmail)
+          .maybeSingle();
+
+        if (profileError) {
+          throw new Error('Error verifying Staff ID.');
+        }
+
+        if (!profile) {
+          throw new Error('Invalid Staff ID. Please check and try again.');
+        }
+
+        // Enforce role and prefix alignment
+        const expectedRole = isBarId ? 'bar' : isKitId ? 'kitchen' : 'admin';
+        const isRoleMatch = (expectedRole === 'admin')
+          ? ['admin', 'super_admin', 'superadmin'].includes(profile.role)
+          : profile.role === expectedRole;
+
+        if (!isRoleMatch) {
+          throw new Error(`Department mismatch for this Staff ID (expected ${expectedRole} department).`);
+        }
+
+        resolvedEmail = profile.email;
+
+        // Perform login
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+          email: resolvedEmail,
+          password,
+        });
+
+        if (authError) {
+          throw new Error(authError.message);
+        }
+
+        if (!data.user) {
+          throw new Error('User account not found.');
+        }
+
+        // Route based on role
+        if (profile.role === 'bar') {
+          navigate('/staff');
+        } else if (profile.role === 'kitchen') {
+          navigate('/kitchen-staff');
+        } else if (['admin', 'super_admin', 'superadmin'].includes(profile.role)) {
+          navigate('/admin');
+        } else {
+          throw new Error('Unauthorized role type for Staff ID login.');
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during sign in.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+      <div className="max-w-md w-full p-8 bg-white rounded-2xl shadow-sm border border-neutral-200">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-neutral-900 mb-2">
+            Welcome Back
+          </h1>
+          <p className="text-neutral-600">Log in to your account</p>
+        </div>
+
+        <form onSubmit={handleLogin} className="space-y-6">
+          {error && (
+            <div className="p-4 bg-red-50 text-red-600 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-2">
+              Email Address or Staff ID
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Mail className="h-5 w-5 text-neutral-400" />
+              </div>
+              <input
+                type="text"
+                value={loginInput}
+                onChange={(e) => setLoginInput(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition-all text-neutral-900"
+                placeholder="email@example.com or BAR00123456"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 mb-2">
+              Password
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Lock className="h-5 w-5 text-neutral-400" />
+              </div>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition-all text-neutral-900"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors disabled:opacity-50"
+          >
+            {loading ? 'Signing In...' : 'Sign In'}
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
