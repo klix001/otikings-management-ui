@@ -51,6 +51,13 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
   const [showAddDelivery, setShowAddDelivery] = useState(false);
   const [showEditDelivery, setShowEditDelivery] = useState(false);
   const [editingDelivery, setEditingDelivery] = useState<SupplierDelivery | null>(null);
+
+  // Opening stock modal
+  const [showOpeningStockModal, setShowOpeningStockModal] = useState(false);
+  const [openingStockItem, setOpeningStockItem] = useState<StoreItem | null>(null);
+  const [openingStockName, setOpeningStockName] = useState('');
+  const [openingStockValue, setOpeningStockValue] = useState<number | ''>('');
+
   const [submitting, setSubmitting] = useState(false);
 
   // Form fields — delivery
@@ -413,6 +420,69 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
     }
   };
 
+  // ─── Save Opening Stock ────────────────────────────────────────────
+  const handleSaveOpeningStock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsedValue = Number(openingStockValue) || 0;
+    if (!openingStockName) {
+      alert('Please enter or select an item name.');
+      return;
+    }
+    setSubmitting(true);
+
+    try {
+      // Check if item exists in store_inventory for this department
+      const { data: existing, error: findErr } = await supabase
+        .from('store_inventory')
+        .select('*')
+        .eq('name', openingStockName)
+        .eq('department', department)
+        .maybeSingle();
+
+      if (findErr) throw findErr;
+
+      if (existing) {
+        // Update existing record
+        const newClosing = parsedValue + Number(existing.supplied) - Number(existing.loaded);
+        const { error: updateErr } = await supabase
+          .from('store_inventory')
+          .update({
+            opening: parsedValue,
+            closing: newClosing,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id);
+
+        if (updateErr) throw updateErr;
+      } else {
+        // Create new record
+        const { error: createErr } = await supabase
+          .from('store_inventory')
+          .insert([{
+            name: openingStockName,
+            opening: parsedValue,
+            supplied: 0,
+            loaded: 0,
+            closing: parsedValue,
+            department,
+          }]);
+
+        if (createErr) throw createErr;
+      }
+
+      setShowOpeningStockModal(false);
+      setOpeningStockItem(null);
+      setOpeningStockName('');
+      setOpeningStockValue('');
+      await fetchAll();
+    } catch (err: any) {
+      console.error('Error saving opening stock:', err);
+      alert(err.message || 'Failed to save opening stock.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // Function to determine stock level color
   const getStockLevelData = (closing: number) => {
     if (closing > 50) return { label: 'High', class: 'bg-green-100 text-green-700' };
@@ -432,15 +502,31 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
             Manage supplier deliveries and track store stock levels
           </p>
         </div>
-        {activeTab === 'deliveries' && (
-          <button
-            onClick={() => { resetDeliveryForm(); setShowAddDelivery(true); }}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm"
-          >
-            <Plus className="w-5 h-5" />
-            <span className="hidden sm:inline">Add Delivery</span>
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {activeTab === 'store' && (
+            <button
+              onClick={() => {
+                setOpeningStockItem(null);
+                setOpeningStockName('');
+                setOpeningStockValue('');
+                setShowOpeningStockModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm cursor-pointer"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Add Opening Stock</span>
+            </button>
+          )}
+          {activeTab === 'deliveries' && (
+            <button
+              onClick={() => { resetDeliveryForm(); setShowAddDelivery(true); }}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+            >
+              <Plus className="w-5 h-5" />
+              <span className="hidden sm:inline">Add Delivery</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -601,6 +687,7 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
                         <th className="px-6 py-3 text-right text-sm font-semibold text-green-700">Supplied</th>
                         <th className="px-6 py-3 text-right text-sm font-semibold text-orange-700">Loaded</th>
                         <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900 bg-neutral-100">Level</th>
+                        <th className="px-6 py-3 text-center text-sm font-semibold text-neutral-900">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-200">
@@ -620,13 +707,26 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
                                 </span>
                               </div>
                             </td>
+                            <td className="px-6 py-4 text-center whitespace-nowrap">
+                              <button
+                                onClick={() => {
+                                  setOpeningStockItem(item);
+                                  setOpeningStockName(item.name);
+                                  setOpeningStockValue(item.opening);
+                                  setShowOpeningStockModal(true);
+                                }}
+                                className="inline-flex items-center gap-1 px-3 py-1 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium"
+                              >
+                                <Pencil className="w-4 h-4" /> Edit Opening
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
                       {storeItems.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="px-6 py-10 text-center text-sm text-neutral-500">
-                            Store is empty. Add supplier deliveries to stock the store.
+                          <td colSpan={6} className="px-6 py-10 text-center text-sm text-neutral-500">
+                            Store is empty. Add supplier deliveries or set opening stock to stock the store.
                           </td>
                         </tr>
                       )}
@@ -820,6 +920,95 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-75">
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* ─── Add/Edit Opening Stock Modal ────────────────────────────── */}
+      {showOpeningStockModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 max-h-[95vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold text-neutral-900 mb-4">
+              {openingStockItem ? 'Edit Opening Stock' : 'Add Opening Stock'}
+            </h2>
+            <form onSubmit={handleSaveOpeningStock} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-neutral-700 mb-1">Item Name</label>
+                <input
+                  type="text"
+                  required
+                  disabled={!!openingStockItem}
+                  value={openingStockName}
+                  onChange={(e) => setOpeningStockName(e.target.value)}
+                  className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-neutral-100 disabled:text-neutral-500"
+                  placeholder="e.g., Tusker Beer"
+                  list="store-items-list"
+                />
+                {!openingStockItem && (
+                  <>
+                    <datalist id="store-items-list">
+                      {storeItems.map((item) => (
+                        <option key={item.id} value={item.name} />
+                      ))}
+                    </datalist>
+                    <p className="text-xs text-neutral-400 mt-1">Select existing item or type a new name.</p>
+                  </>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-neutral-700 mb-1">Opening Stock (Units)</label>
+                <input
+                  type="number"
+                  min="0"
+                  required
+                  value={openingStockValue}
+                  onChange={(e) => setOpeningStockValue(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., 100"
+                />
+              </div>
+
+              {openingStockItem && (
+                <div className="bg-neutral-50 p-3 rounded-lg border border-neutral-200 text-xs text-neutral-500 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Supplied:</span>
+                    <span className="font-semibold text-neutral-700">{openingStockItem.supplied} units</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Loaded:</span>
+                    <span className="font-semibold text-neutral-700">{openingStockItem.loaded} units</span>
+                  </div>
+                  <div className="flex justify-between border-t border-neutral-200 pt-1 font-medium">
+                    <span>New Closing Stock:</span>
+                    <span className="font-bold text-neutral-900">
+                      {(Number(openingStockValue) || 0) + Number(openingStockItem.supplied) - Number(openingStockItem.loaded)} units
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowOpeningStockModal(false);
+                    setOpeningStockItem(null);
+                    setOpeningStockName('');
+                    setOpeningStockValue('');
+                  }}
+                  className="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-75"
+                >
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Save Stock
                 </button>
               </div>
             </form>
