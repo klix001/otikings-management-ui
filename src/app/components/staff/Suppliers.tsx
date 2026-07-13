@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Eye, Loader2, AlertCircle, Package, ArrowRight, Truck, Upload } from 'lucide-react';
+import { Plus, Eye, Loader2, AlertCircle, Package, ArrowRight, Truck, Upload, Pencil } from 'lucide-react';
 import { useLocation } from 'react-router';
 import { supabase } from '../../lib/supabase';
 
@@ -49,6 +49,8 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
 
   // Add delivery modal
   const [showAddDelivery, setShowAddDelivery] = useState(false);
+  const [showEditDelivery, setShowEditDelivery] = useState(false);
+  const [editingDelivery, setEditingDelivery] = useState<SupplierDelivery | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Form fields — delivery
@@ -232,6 +234,185 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
     }
   };
 
+  // ─── Edit Delivery ─────────────────────────────────────────────────
+  const handleEditDelivery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDelivery) return;
+
+    const oldItems = editingDelivery.items;
+    const oldTotalUnits = editingDelivery.quantity * editingDelivery.itemQtyPerPack;
+
+    const parsedQuantity = Number(quantity) || 0;
+    const parsedPrice = Number(price) || 0;
+    const parsedItemQtyPerPack = Number(itemQtyPerPack) || 1;
+
+    if (!supplier || !items || parsedQuantity <= 0) {
+      alert('Please fill in all required fields.');
+      return;
+    }
+    setSubmitting(true);
+
+    const newTotalUnits = parsedQuantity * parsedItemQtyPerPack;
+    let finalReceiptUrl = editingDelivery.receiptUrl || '';
+
+    try {
+      // 1. Upload receipt if new file selected
+      if (receiptFile) {
+        const fileExt = receiptFile.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
+        const filePath = `${department}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('receipts')
+          .upload(filePath, receiptFile);
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage
+          .from('receipts')
+          .getPublicUrl(filePath);
+
+        finalReceiptUrl = publicUrlData.publicUrl;
+      }
+
+      // 2. Update the delivery record
+      const { error: updateDeliveryErr } = await supabase
+        .from('supplier_deliveries')
+        .update({
+          date,
+          supplier,
+          price: parsedPrice,
+          items,
+          quantity: parsedQuantity,
+          item_qty_per_pack: parsedItemQtyPerPack,
+          receipt_url: finalReceiptUrl || null,
+        })
+        .eq('id', editingDelivery.id);
+
+      if (updateDeliveryErr) throw updateDeliveryErr;
+
+      // 3. Update store inventory
+      if (oldItems === items) {
+        // Name did not change: adjust supplied on the item
+        const { data: existing, error: findErr } = await supabase
+          .from('store_inventory')
+          .select('*')
+          .eq('name', items)
+          .eq('department', department)
+          .maybeSingle();
+
+        if (findErr) throw findErr;
+
+        if (existing) {
+          const difference = newTotalUnits - oldTotalUnits;
+          const newSupplied = Number(existing.supplied) + difference;
+          const newClosing = Number(existing.opening) + newSupplied - Number(existing.loaded);
+
+          const { error: updateErr } = await supabase
+            .from('store_inventory')
+            .update({
+              supplied: newSupplied,
+              closing: newClosing,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id);
+
+          if (updateErr) throw updateErr;
+        } else {
+          // If somehow the existing record doesn't exist, create it
+          const { error: createErr } = await supabase
+            .from('store_inventory')
+            .insert([{
+              name: items,
+              opening: 0,
+              supplied: newTotalUnits,
+              loaded: 0,
+              closing: newTotalUnits,
+              department,
+            }]);
+
+          if (createErr) throw createErr;
+        }
+      } else {
+        // Name changed:
+        // a. Subtract oldTotalUnits from oldItems
+        const { data: existingOld, error: findOldErr } = await supabase
+          .from('store_inventory')
+          .select('*')
+          .eq('name', oldItems)
+          .eq('department', department)
+          .maybeSingle();
+
+        if (findOldErr) throw findOldErr;
+
+        if (existingOld) {
+          const newSupplied = Number(existingOld.supplied) - oldTotalUnits;
+          const newClosing = Number(existingOld.opening) + newSupplied - Number(existingOld.loaded);
+
+          const { error: updateOldErr } = await supabase
+            .from('store_inventory')
+            .update({
+              supplied: newSupplied,
+              closing: newClosing,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingOld.id);
+
+          if (updateOldErr) throw updateOldErr;
+        }
+
+        // b. Add newTotalUnits to newItems
+        const { data: existingNew, error: findNewErr } = await supabase
+          .from('store_inventory')
+          .select('*')
+          .eq('name', items)
+          .eq('department', department)
+          .maybeSingle();
+
+        if (findNewErr) throw findNewErr;
+
+        if (existingNew) {
+          const newSupplied = Number(existingNew.supplied) + newTotalUnits;
+          const newClosing = Number(existingNew.opening) + newSupplied - Number(existingNew.loaded);
+
+          const { error: updateNewErr } = await supabase
+            .from('store_inventory')
+            .update({
+              supplied: newSupplied,
+              closing: newClosing,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingNew.id);
+
+          if (updateNewErr) throw updateNewErr;
+        } else {
+          const { error: createErr } = await supabase
+            .from('store_inventory')
+            .insert([{
+              name: items,
+              opening: 0,
+              supplied: newTotalUnits,
+              loaded: 0,
+              closing: newTotalUnits,
+              department,
+            }]);
+
+          if (createErr) throw createErr;
+        }
+      }
+
+      setShowEditDelivery(false);
+      setEditingDelivery(null);
+      resetDeliveryForm();
+      await fetchAll();
+    } catch (err: any) {
+      console.error('Error updating delivery:', err);
+      alert(err.message || 'Failed to update delivery.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // Function to determine stock level color
   const getStockLevelData = (closing: number) => {
     if (closing > 50) return { label: 'High', class: 'bg-green-100 text-green-700' };
@@ -338,6 +519,7 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
                         <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900">P/P</th>
                         <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900">Total</th>
                         <th className="px-6 py-3 text-center text-sm font-semibold text-neutral-900">Receipt</th>
+                        <th className="px-6 py-3 text-center text-sm font-semibold text-neutral-900">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-200">
@@ -360,11 +542,29 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
                               <span className="text-sm text-neutral-400">None</span>
                             )}
                           </td>
+                          <td className="px-6 py-4 text-center whitespace-nowrap">
+                            <button
+                              onClick={() => {
+                                setEditingDelivery(entry);
+                                setDate(entry.date);
+                                setSupplier(entry.supplier);
+                                setItems(entry.items);
+                                setPrice(entry.price);
+                                setQuantity(entry.quantity);
+                                setItemQtyPerPack(entry.itemQtyPerPack);
+                                setReceiptFile(null);
+                                setShowEditDelivery(true);
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium"
+                            >
+                              <Pencil className="w-4 h-4" /> Edit
+                            </button>
+                          </td>
                         </tr>
                       ))}
                       {deliveries.length === 0 && (
                         <tr>
-                          <td colSpan={8} className="px-6 py-10 text-center text-sm text-neutral-500">
+                          <td colSpan={9} className="px-6 py-10 text-center text-sm text-neutral-500">
                             No deliveries recorded yet. Click "Add Delivery" to receive stock from a supplier.
                           </td>
                         </tr>
@@ -525,6 +725,101 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-75">
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Add Delivery
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Edit Delivery Modal ──────────────────────────────────────── */}
+      {showEditDelivery && editingDelivery && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[95vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold text-neutral-900 mb-4">Edit Supplier Delivery</h2>
+            <form onSubmit={handleEditDelivery} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-neutral-700 mb-1">Date</label>
+                <input type="date" required value={date} onChange={(e) => setDate(e.target.value)}
+                  className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-neutral-700 mb-1">Supplier Name</label>
+                <input type="text" required value={supplier} onChange={(e) => setSupplier(e.target.value)}
+                  className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="e.g., East African Breweries" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-neutral-700 mb-1">Item (Product Name)</label>
+                <input type="text" required value={items} onChange={(e) => setItems(e.target.value)}
+                  className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="e.g., Tusker Beer"
+                  list="store-items-list" />
+                <datalist id="store-items-list">
+                  {storeItems.map((item) => (
+                    <option key={item.id} value={item.name} />
+                  ))}
+                </datalist>
+                <p className="text-xs text-neutral-400 mt-1">Select existing item or type a new name.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-neutral-700 mb-1">Price/Pack (₦)</label>
+                  <input type="number" min="0" required value={price} onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-neutral-700 mb-1">Qty (Packs)</label>
+                  <input type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-neutral-700 mb-1">Items/Pack</label>
+                  <input type="number" min="1" required value={itemQtyPerPack} onChange={(e) => setItemQtyPerPack(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-neutral-700 mb-1">Upload Receipt (Optional)</label>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 px-4 py-2 bg-neutral-100 border border-neutral-300 rounded-lg cursor-pointer hover:bg-neutral-200 transition-colors text-sm font-medium text-neutral-700">
+                    <Upload className="w-4 h-4" />
+                    {receiptFile ? 'Change File' : (editingDelivery.receiptUrl ? 'Change Receipt' : 'Choose File')}
+                    <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        setReceiptFile(e.target.files[0]);
+                      }
+                    }} />
+                  </label>
+                  {receiptFile ? (
+                    <span className="text-sm text-neutral-600 truncate max-w-[200px]">{receiptFile.name}</span>
+                  ) : editingDelivery.receiptUrl ? (
+                    <span className="text-sm text-neutral-500 italic">Has existing receipt</span>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="bg-neutral-50 p-3.5 rounded-lg border border-neutral-200 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm font-medium">
+                <div>
+                  <span className="text-neutral-500">Total Price:</span>
+                  <span className="ml-2 text-neutral-900 font-bold">₦ {((Number(price) || 0) * (Number(quantity) || 0)).toLocaleString()}</span>
+                </div>
+                <div>
+                  <span className="text-neutral-500">Units going to Store:</span>
+                  <span className="ml-2 text-green-600 font-bold">+{(Number(quantity) || 0) * (Number(itemQtyPerPack) || 1)} units</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => { setShowEditDelivery(false); setEditingDelivery(null); }}
+                  className="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={submitting}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-75">
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Save Changes
                 </button>
               </div>
             </form>
