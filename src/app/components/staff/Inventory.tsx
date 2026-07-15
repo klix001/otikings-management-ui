@@ -59,6 +59,16 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   // Sales Report state
   const [salesReports, setSalesReports] = useState<SalesReport[]>([]);
 
+  // Track whether today's and selected day's accounts are closed (have a sales report)
+  const [todayAccountClosed, setTodayAccountClosed] = useState(false);
+  const [selectedDayAccountClosed, setSelectedDayAccountClosed] = useState(false);
+
+  // A day's stockbook is editable if:
+  // - It's today (always editable), OR
+  // - Today's account has NOT been closed yet, OR
+  // - The selected day's account has NOT been completed yet
+  const isEditable = isToday || !todayAccountClosed || !selectedDayAccountClosed;
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -193,6 +203,17 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           stockbookSales: Number(r.stockbook_sales || 0),
           additionsSummary: r.additions_summary || [],
         })));
+
+        // Check if today's account has been closed (sales report exists for today)
+        const todayHasReport = reportData.some((r: any) => r.date === today);
+        setTodayAccountClosed(todayHasReport);
+
+        // Check if the selected day's account has been closed
+        const selectedDayHasReport = reportData.some((r: any) => r.date === selectedDate);
+        setSelectedDayAccountClosed(selectedDayHasReport);
+      } else {
+        setTodayAccountClosed(false);
+        setSelectedDayAccountClosed(false);
       }
 
     } catch (err: any) {
@@ -463,7 +484,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           </h1>
           <p className="text-neutral-600">Track daily stockbook movements and daily sales reports</p>
         </div>
-        {activeTab === 'stockbook' && isToday ? (
+        {activeTab === 'stockbook' && isEditable ? (
           <button
             onClick={handleOpenAdd}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm"
@@ -471,7 +492,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
             <Plus className="w-5 h-5" />
             <span className="hidden sm:inline">Add Item</span>
           </button>
-        ) : activeTab === 'stockbook' && !isToday ? (
+        ) : activeTab === 'stockbook' && !isEditable ? (
           <span className="flex items-center gap-2 px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-sm font-semibold border border-amber-300">
             Read Only
           </span>
@@ -520,10 +541,14 @@ export default function Inventory({ department: propDepartment }: InventoryProps
             </button>
           )}
           <div className="ml-auto flex items-center gap-2">
-            {isToday ? (
-              <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-800 rounded-full border border-green-200">Today • Editable</span>
+            {isEditable ? (
+              <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-800 rounded-full border border-green-200">
+                {isToday ? 'Today' : selectedDate} • Editable
+              </span>
             ) : (
-              <span className="text-xs font-semibold px-2 py-1 bg-amber-100 text-amber-800 rounded-full border border-amber-200">Historical • Read Only</span>
+              <span className="text-xs font-semibold px-2 py-1 bg-amber-100 text-amber-800 rounded-full border border-amber-200">
+                {isToday ? 'Today' : 'Historical'} • Read Only
+              </span>
             )}
           </div>
         </div>
@@ -612,7 +637,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
-                            {isToday ? (
+                            {isEditable ? (
                               <>
                                 <button onClick={() => handleOpenEdit(item)}
                                   className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Item">
