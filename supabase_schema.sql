@@ -266,3 +266,4 @@ CREATE TABLE IF NOT EXISTS daily_signatures (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     UNIQUE(date, department)
 );
+NOTIFY pgrst, 'reload schema';
