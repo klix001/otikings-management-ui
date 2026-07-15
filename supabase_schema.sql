@@ -254,3 +254,15 @@ CREATE TABLE IF NOT EXISTS sales_reports (
 INSERT INTO sales_reports (date, total_sales, cash_at_hand, pos_transfer, not_paid, additions_summary, department) VALUES
 ('2026-06-17', 25000, 10000, 15000, 0, '[{"name": "Tusker Beer", "quantity": 24}, {"name": "Guinness", "quantity": 12}]'::jsonb, 'bar')
 ON CONFLICT DO NOTHING;
+
+-- -------------------------------------------------------------
+-- 12. Daily Signatures Table
+-- -------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS daily_signatures (
+    id BIGSERIAL PRIMARY KEY,
+    date DATE NOT NULL,
+    department VARCHAR(50) NOT NULL CHECK (department IN ('bar', 'kitchen')),
+    signed_by VARCHAR(255) DEFAULT 'Staff',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    UNIQUE(date, department)
+);

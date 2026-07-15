@@ -59,15 +59,11 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   // Sales Report state
   const [salesReports, setSalesReports] = useState<SalesReport[]>([]);
 
-  // Track whether today's and selected day's accounts are closed (have a sales report)
-  const [todayAccountClosed, setTodayAccountClosed] = useState(false);
-  const [selectedDayAccountClosed, setSelectedDayAccountClosed] = useState(false);
+  // Track whether the selected day's stockbook has been signed/closed
+  const [isSigned, setIsSigned] = useState(false);
 
-  // A day's stockbook is editable if:
-  // - It's today (always editable), OR
-  // - Today's account has NOT been closed yet, OR
-  // - The selected day's account has NOT been completed yet
-  const isEditable = isToday || !todayAccountClosed || !selectedDayAccountClosed;
+  // A day's stockbook is editable only if it hasn't been signed
+  const isEditable = !isSigned;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -203,18 +199,20 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           stockbookSales: Number(r.stockbook_sales || 0),
           additionsSummary: r.additions_summary || [],
         })));
-
-        // Check if today's account has been closed (sales report exists for today)
-        const todayHasReport = reportData.some((r: any) => r.date === today);
-        setTodayAccountClosed(todayHasReport);
-
-        // Check if the selected day's account has been closed
-        const selectedDayHasReport = reportData.some((r: any) => r.date === selectedDate);
-        setSelectedDayAccountClosed(selectedDayHasReport);
-      } else {
-        setTodayAccountClosed(false);
-        setSelectedDayAccountClosed(false);
       }
+
+      // 4. Check if the selected date has been signed
+      const { data: signData, error: signErr } = await supabase
+        .from('daily_signatures')
+        .select('id')
+        .eq('department', department)
+        .eq('date', selectedDate)
+        .maybeSingle();
+
+      if (signErr && signErr.code !== 'PGRST116') {
+        console.error('Error checking signature:', signErr);
+      }
+      setIsSigned(!!signData);
 
     } catch (err: any) {
       console.error('Error fetching data:', err);
@@ -279,6 +277,28 @@ export default function Inventory({ department: propDepartment }: InventoryProps
       }
     } catch (err) {
       console.error('Error syncing stockbook sales to report:', err);
+    }
+  };
+
+  const handleSignRecord = async () => {
+    if (window.confirm(`Are you sure you want to sign and close the stockbook for ${selectedDate}? This action cannot be undone and will make the stockbook read-only.`)) {
+      try {
+        const { error: signErr } = await supabase
+          .from('daily_signatures')
+          .insert([{
+            date: selectedDate,
+            department,
+            signed_by: 'Staff'
+          }]);
+
+        if (signErr) throw signErr;
+        
+        // Refresh data to update isSigned state
+        await fetchData();
+      } catch (err: any) {
+        console.error('Error signing record:', err);
+        alert(err.message || 'Failed to sign the record. Make sure the database table is created.');
+      }
     }
   };
 
@@ -557,13 +577,22 @@ export default function Inventory({ department: propDepartment }: InventoryProps
             </button>
           )}
           <div className="ml-auto flex items-center gap-2">
+            {!isSigned && (
+              <button
+                onClick={handleSignRecord}
+                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+              >
+                Sign & Close Day
+              </button>
+            )}
+            
             {isEditable ? (
               <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-800 rounded-full border border-green-200">
                 {isToday ? 'Today' : selectedDate} • Editable
               </span>
             ) : (
               <span className="text-xs font-semibold px-2 py-1 bg-amber-100 text-amber-800 rounded-full border border-amber-200">
-                {isToday ? 'Today' : 'Historical'} • Read Only
+                Signed & Locked
               </span>
             )}
           </div>
