@@ -314,6 +314,22 @@ export default function Inventory({ department: propDepartment }: InventoryProps
     const calculatedTotal = parsedOpening + parsedAddition;
     const calculatedClosing = calculatedTotal - parsedSold - parsedWaste;
 
+    // Normalize name: use existing store item casing if match found
+    const matchingStoreItem = storeItems.find((s) => s.name.toLowerCase() === name.trim().toLowerCase());
+    const normalizedName = matchingStoreItem ? matchingStoreItem.name : name.trim();
+
+    // Case-insensitive duplicate check: prevent adding same item name on same date
+    if (!editingItem) {
+      const duplicate = inventory.find(
+        (item) => item.name.toLowerCase() === normalizedName.toLowerCase()
+      );
+      if (duplicate) {
+        alert(`An item named "${duplicate.name}" already exists in today's stockbook. Please edit the existing entry instead.`);
+        setSubmitting(false);
+        return;
+      }
+    }
+
     // Calculate how many units are being taken from store
     let storeDeduction = 0;
     if (editingItem) {
@@ -324,9 +340,9 @@ export default function Inventory({ department: propDepartment }: InventoryProps
 
     // Check store has enough stock if we're deducting
     if (storeDeduction > 0) {
-      const available = getStoreStock(name);
+      const available = getStoreStock(normalizedName);
       if (available < storeDeduction) {
-        alert(`Insufficient store stock for "${name}". Available: ${available} units, Requested: ${storeDeduction} units. Please receive a supplier delivery first.`);
+        alert(`Insufficient store stock for "${normalizedName}". Available: ${available} units, Requested: ${storeDeduction} units. Please receive a supplier delivery first.`);
         setSubmitting(false);
         return;
       }
@@ -337,7 +353,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
         const { error: updateError } = await supabase
           .from('inventory_items')
           .update({
-            name,
+            name: normalizedName,
             opening: parsedOpening,
             addition: parsedAddition,
             total: calculatedTotal,
@@ -353,7 +369,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
         const { error: insertError } = await supabase
           .from('inventory_items')
           .insert([{
-            name,
+            name: normalizedName,
             date: selectedDate,
             opening: parsedOpening,
             addition: parsedAddition,
@@ -370,7 +386,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
 
       // Deduct from store if addition increased
       if (storeDeduction > 0) {
-        const storeItem = storeItems.find((s) => s.name.toLowerCase() === name.toLowerCase());
+        const storeItem = storeItems.find((s) => s.name.toLowerCase() === normalizedName.toLowerCase());
         if (storeItem) {
           const newLoaded = storeItem.loaded + storeDeduction;
           const newClosing = storeItem.closing - storeDeduction;

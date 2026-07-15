@@ -192,14 +192,18 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
       if (insertErr) throw insertErr;
 
       // 3. Update store inventory (upsert — add to existing or create new)
+      //    Use case-insensitive matching to prevent duplicates like "Legend" vs "legend"
       const { data: existing, error: findErr } = await supabase
         .from('store_inventory')
         .select('*')
-        .eq('name', items)
+        .ilike('name', items.trim())
         .eq('department', department)
         .maybeSingle();
 
       if (findErr) throw findErr;
+
+      // Use existing name casing if found, otherwise use trimmed input
+      const normalizedItemName = existing ? existing.name : items.trim();
 
       if (existing) {
         const newSupplied = Number(existing.supplied) + totalUnits;
@@ -219,7 +223,7 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
         const { error: createErr } = await supabase
           .from('store_inventory')
           .insert([{
-            name: items,
+            name: normalizedItemName,
             opening: 0,
             supplied: totalUnits,
             loaded: 0,
@@ -304,7 +308,7 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
         const { data: existing, error: findErr } = await supabase
           .from('store_inventory')
           .select('*')
-          .eq('name', items)
+          .ilike('name', items.trim())
           .eq('department', department)
           .maybeSingle();
 
@@ -346,7 +350,7 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
         const { data: existingOld, error: findOldErr } = await supabase
           .from('store_inventory')
           .select('*')
-          .eq('name', oldItems)
+          .ilike('name', oldItems.trim())
           .eq('department', department)
           .maybeSingle();
 
@@ -372,7 +376,7 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
         const { data: existingNew, error: findNewErr } = await supabase
           .from('store_inventory')
           .select('*')
-          .eq('name', items)
+          .ilike('name', items.trim())
           .eq('department', department)
           .maybeSingle();
 
@@ -431,11 +435,11 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
     setSubmitting(true);
 
     try {
-      // Check if item exists in store_inventory for this department
+      // Check if item exists in store_inventory for this department (case-insensitive)
       const { data: existing, error: findErr } = await supabase
         .from('store_inventory')
         .select('*')
-        .eq('name', openingStockName)
+        .ilike('name', openingStockName.trim())
         .eq('department', department)
         .maybeSingle();
 
@@ -459,7 +463,7 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
         const { error: createErr } = await supabase
           .from('store_inventory')
           .insert([{
-            name: openingStockName,
+            name: openingStockName.trim(),
             opening: parsedValue,
             supplied: 0,
             loaded: 0,
