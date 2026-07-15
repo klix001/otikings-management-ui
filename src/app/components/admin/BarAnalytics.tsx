@@ -27,15 +27,25 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [invRes, expRes] = await Promise.all([
+        const [invRes, expRes, salesRes] = await Promise.all([
           supabase.from('inventory_items').select('date, sold, unit_price').eq('department', 'bar'),
           supabase.from('expenses').select('date, category, amount').eq('department', 'bar'),
+          supabase.from('sales_reports').select('date, total_sales').eq('department', 'bar'),
         ]);
 
         const revMap: Record<string, number> = {};
+        
+        // 1. Calculate from real-time inventory
         (invRes.data || []).forEach(item => {
           if (!revMap[item.date]) revMap[item.date] = 0;
           revMap[item.date] += (Number(item.sold) || 0) * (Number(item.unit_price) || 0);
+        });
+        
+        // 2. Override with finalized formal sales reports if available
+        (salesRes.data || []).forEach(report => {
+          if (report.total_sales !== null && report.total_sales !== undefined) {
+            revMap[report.date] = Number(report.total_sales);
+          }
         });
         
         setRawRevenue(Object.entries(revMap).map(([date, amount]) => ({ date, amount })));

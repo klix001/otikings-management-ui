@@ -96,7 +96,7 @@ export default function AdminDashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const [lodgeRes, expenseRes, cashRes, barSalesRes, kitchenSalesRes, barExpRes, kitchenExpRes, lodgeExpRes] = await Promise.all([
+      const [lodgeRes, expenseRes, cashRes, barSalesRes, kitchenSalesRes, barExpRes, kitchenExpRes, lodgeExpRes, salesReportsRes] = await Promise.all([
         supabase.from('lodge_entries').select('date, revenue').order('date', { ascending: true }),
         supabase.from('expenses').select('date, amount').order('date', { ascending: true }),
         supabase.from('cash_submissions').select('status, total_cash, date'),
@@ -105,21 +105,35 @@ export default function AdminDashboard() {
         supabase.from('expenses').select('date, amount').eq('department', 'bar'),
         supabase.from('expenses').select('date, amount').eq('department', 'kitchen'),
         supabase.from('expenses').select('date, amount').eq('department', 'lodge'),
+        supabase.from('sales_reports').select('date, total_sales, department'),
       ]);
 
       const lodgeRevenueMapped = (lodgeRes.data || []).map((r: any) => ({ date: r.date, amount: Number(r.revenue) }));
       // Helper to aggregate inventory items into daily revenue
-      const aggregateInventoryRevenue = (data: any[]) => {
+      const aggregateInventoryRevenue = (data: any[], salesData: any[]) => {
         const revMap: Record<string, number> = {};
+        
+        // 1. Calculate from real-time inventory
         data.forEach(item => {
           if (!revMap[item.date]) revMap[item.date] = 0;
           revMap[item.date] += (Number(item.sold) || 0) * (Number(item.unit_price) || 0);
         });
+        
+        // 2. Override with finalized formal sales reports if available
+        salesData.forEach(report => {
+          if (report.total_sales !== null && report.total_sales !== undefined) {
+            revMap[report.date] = Number(report.total_sales);
+          }
+        });
+        
         return Object.entries(revMap).map(([date, amount]) => ({ date, amount }));
       };
 
-      const barRevenueMapped = aggregateInventoryRevenue(barSalesRes.data || []);
-      const kitchenRevenueMapped = aggregateInventoryRevenue(kitchenSalesRes.data || []);
+      const barSalesReports = (salesReportsRes.data || []).filter((r: any) => r.department === 'bar');
+      const kitchenSalesReports = (salesReportsRes.data || []).filter((r: any) => r.department === 'kitchen');
+
+      const barRevenueMapped = aggregateInventoryRevenue(barSalesRes.data || [], barSalesReports);
+      const kitchenRevenueMapped = aggregateInventoryRevenue(kitchenSalesRes.data || [], kitchenSalesReports);
 
       setRawRevenue([...lodgeRevenueMapped, ...barRevenueMapped, ...kitchenRevenueMapped]);
       setRawExpenses((expenseRes.data || []).map((e: any) => ({ date: e.date, amount: Number(e.amount) })));
