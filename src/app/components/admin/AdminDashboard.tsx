@@ -100,24 +100,34 @@ export default function AdminDashboard() {
         supabase.from('lodge_entries').select('date, revenue').order('date', { ascending: true }),
         supabase.from('expenses').select('date, amount').order('date', { ascending: true }),
         supabase.from('cash_submissions').select('status, total_cash, date'),
-        supabase.from('sales_reports').select('date, total_sales').eq('department', 'bar'),
-        supabase.from('sales_reports').select('date, total_sales').eq('department', 'kitchen'),
+        supabase.from('inventory_items').select('date, sold, unit_price').eq('department', 'bar'),
+        supabase.from('inventory_items').select('date, sold, unit_price').eq('department', 'kitchen'),
         supabase.from('expenses').select('date, amount').eq('department', 'bar'),
         supabase.from('expenses').select('date, amount').eq('department', 'kitchen'),
         supabase.from('expenses').select('date, amount').eq('department', 'lodge'),
       ]);
 
       const lodgeRevenueMapped = (lodgeRes.data || []).map((r: any) => ({ date: r.date, amount: Number(r.revenue) }));
-      const barRevenueMapped = (barSalesRes.data || []).map((r: any) => ({ date: r.date, amount: Number(r.total_sales) }));
-      const kitchenRevenueMapped = (kitchenSalesRes.data || []).map((r: any) => ({ date: r.date, amount: Number(r.total_sales) }));
+      // Helper to aggregate inventory items into daily revenue
+      const aggregateInventoryRevenue = (data: any[]) => {
+        const revMap: Record<string, number> = {};
+        data.forEach(item => {
+          if (!revMap[item.date]) revMap[item.date] = 0;
+          revMap[item.date] += (Number(item.sold) || 0) * (Number(item.unit_price) || 0);
+        });
+        return Object.entries(revMap).map(([date, amount]) => ({ date, amount }));
+      };
+
+      const barRevenueMapped = aggregateInventoryRevenue(barSalesRes.data || []);
+      const kitchenRevenueMapped = aggregateInventoryRevenue(kitchenSalesRes.data || []);
 
       setRawRevenue([...lodgeRevenueMapped, ...barRevenueMapped, ...kitchenRevenueMapped]);
       setRawExpenses((expenseRes.data || []).map((e: any) => ({ date: e.date, amount: Number(e.amount) })));
       setRawCash(cashRes.data || []);
 
       // Department data
-      setRawBarRevenue((barSalesRes.data || []).map((r: any) => ({ date: r.date, amount: Number(r.total_sales) })));
-      setRawKitchenRevenue((kitchenSalesRes.data || []).map((r: any) => ({ date: r.date, amount: Number(r.total_sales) })));
+      setRawBarRevenue(barRevenueMapped);
+      setRawKitchenRevenue(kitchenRevenueMapped);
       setRawLodgeRevenue((lodgeRes.data || []).map((r: any) => ({ date: r.date, amount: Number(r.revenue) })));
       setRawBarExpenses((barExpRes.data || []).map((e: any) => ({ date: e.date, amount: Number(e.amount) })));
       setRawKitchenExpenses((kitchenExpRes.data || []).map((e: any) => ({ date: e.date, amount: Number(e.amount) })));
