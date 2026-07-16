@@ -210,6 +210,43 @@ export default function Inventory({ department: propDepartment }: InventoryProps
             .insert(inserts)
             .select();
           invData = inserted;
+        } else {
+          // Sync fix: correct openings if previous day's closings have changed since the seed
+          const updates: Promise<any>[] = [];
+          for (const currentItem of invData!) {
+            const prevItem = latestItems.find(
+              (p: any) => p.name.toLowerCase() === currentItem.name.toLowerCase()
+            );
+            if (prevItem) {
+              const prevClosing = Number(prevItem.closing);
+              const currentOpening = Number(currentItem.opening);
+              if (prevClosing !== currentOpening) {
+                const newOpening = prevClosing;
+                const newAddition = Number(currentItem.addition);
+                const newTotal = newOpening + newAddition;
+                const newSold = Number(currentItem.sold);
+                const newWaste = Number(currentItem.waste);
+                const newClosing = newTotal - newSold - newWaste;
+                updates.push(
+                  supabase
+                    .from('inventory_items')
+                    .update({
+                      opening: newOpening,
+                      total: newTotal,
+                      closing: newClosing,
+                    })
+                    .eq('id', currentItem.id)
+                );
+                // Update the local object so the UI reflects the fix immediately
+                currentItem.opening = newOpening;
+                currentItem.total = newTotal;
+                currentItem.closing = newClosing;
+              }
+            }
+          }
+          if (updates.length > 0) {
+            await Promise.all(updates);
+          }
         }
       }
 
