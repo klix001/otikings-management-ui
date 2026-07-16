@@ -1063,12 +1063,12 @@ export default function Inventory({ department: propDepartment }: InventoryProps
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 mb-1">Opening Stock</label>
-                  <input type="number" min="0" required value={opening} onChange={(e) => setOpening(e.target.value === '' ? '' : Number(e.target.value))}
+                  <input type="number" min="0" step={department === 'kitchen' ? 'any' : '1'} required value={opening} onChange={(e) => setOpening(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 mb-1">{department === 'bar' ? 'Addition (from Store)' : 'Addition'}</label>
-                  <input type="number" min="0" required value={addition} onChange={(e) => setAddition(e.target.value === '' ? '' : Number(e.target.value))}
+                  <input type="number" min="0" step={department === 'kitchen' ? 'any' : '1'} required value={addition} onChange={(e) => setAddition(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
               </div>
@@ -1104,12 +1104,12 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 mb-1">Sold</label>
-                  <input type="number" min="0" required value={sold} onChange={(e) => setSold(e.target.value === '' ? '' : Number(e.target.value))}
+                  <input type="number" min="0" step={department === 'kitchen' ? 'any' : '1'} required value={sold} onChange={(e) => setSold(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 mb-1">Waste</label>
-                  <input type="number" min="0" required value={waste} onChange={(e) => setWaste(e.target.value === '' ? '' : Number(e.target.value))}
+                  <input type="number" min="0" step={department === 'kitchen' ? 'any' : '1'} required value={waste} onChange={(e) => setWaste(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
               </div>
