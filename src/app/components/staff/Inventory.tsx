@@ -205,10 +205,14 @@ export default function Inventory({ department: propDepartment }: InventoryProps
             closing: Number(prev.closing),
             department,
           }));
-          const { data: inserted } = await supabase
+          const { data: inserted, error: insertErr } = await supabase
             .from('inventory_items')
             .insert(inserts)
             .select();
+          if (insertErr) {
+            console.error('Error during auto-seed:', insertErr);
+            throw new Error(`Auto-seed failed: ${insertErr.message}`);
+          }
           invData = inserted;
         } else {
           // Sync fix: correct openings if previous day's closings have changed since the seed
@@ -220,13 +224,14 @@ export default function Inventory({ department: propDepartment }: InventoryProps
             if (prevItem) {
               const prevClosing = Number(prevItem.closing);
               const currentOpening = Number(currentItem.opening);
-              if (prevClosing !== currentOpening) {
+              if (Math.abs(prevClosing - currentOpening) > 0.0001) {
                 const newOpening = prevClosing;
                 const newAddition = Number(currentItem.addition);
                 const newTotal = newOpening + newAddition;
                 const newSold = Number(currentItem.sold);
                 const newWaste = Number(currentItem.waste);
                 const newClosing = newTotal - newSold - newWaste;
+                
                 updates.push(
                   supabase
                     .from('inventory_items')
@@ -236,6 +241,9 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                       closing: newClosing,
                     })
                     .eq('id', currentItem.id)
+                    .then(({ error }) => {
+                      if (error) console.error(`Sync error for ${currentItem.name}:`, error);
+                    })
                 );
                 // Update the local object so the UI reflects the fix immediately
                 currentItem.opening = newOpening;
