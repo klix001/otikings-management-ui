@@ -73,6 +73,9 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   // POS Breakdowns state
   const [posBreakdowns, setPosBreakdowns] = useState<PosBreakdown[]>([]);
 
+  // Previous day's items for auto-filling
+  const [previousDayItems, setPreviousDayItems] = useState<InventoryItem[]>([]);
+
   // Track whether the selected day's stockbook has been signed/closed
   const [isSigned, setIsSigned] = useState(false);
 
@@ -151,8 +154,8 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   };
 
   // ─── Data Fetching ─────────────────────────────────────────────────
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       // 1. Fetch stockbook items for selected date
@@ -165,18 +168,31 @@ export default function Inventory({ department: propDepartment }: InventoryProps
 
       if (invErr) throw invErr;
 
-      // Auto carry-forward: if today has no items, seed from previous day's closing
-      if ((!invData || invData.length === 0) && selectedDate === today) {
-        const { data: prevData } = await supabase
-          .from('inventory_items')
-          .select('*')
-          .eq('department', department)
-          .lt('date', selectedDate)
-          .order('date', { ascending: false });
+      // Fetch previous day items for auto-filling the Add Item form and auto-seed
+      const { data: prevData } = await supabase
+        .from('inventory_items')
+        .select('*')
+        .eq('department', department)
+        .lt('date', selectedDate)
+        .order('date', { ascending: false });
 
-        if (prevData && prevData.length > 0) {
-          const mostRecentDate = (prevData[0] as any).date;
-          const latestItems = prevData.filter((r: any) => r.date === mostRecentDate);
+      if (prevData && prevData.length > 0) {
+        const mostRecentDate = (prevData[0] as any).date;
+        const latestItems = prevData.filter((r: any) => r.date === mostRecentDate);
+        setPreviousDayItems(latestItems.map((item: any) => ({
+          id: Number(item.id),
+          name: item.name,
+          opening: Number(item.opening),
+          addition: Number(item.addition),
+          total: Number(item.total),
+          unitPrice: Number(item.unit_price),
+          sold: Number(item.sold),
+          waste: Number(item.waste),
+          closing: Number(item.closing),
+        })));
+        
+        // Auto carry-forward: if the selected date has no items, seed from previous day's closing
+        if (!invData || invData.length === 0) {
           const inserts = latestItems.map((prev: any) => ({
             name: prev.name,
             date: selectedDate,
@@ -284,7 +300,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
       console.error('Error fetching data:', err);
       setError(err.message || 'Failed to fetch data.');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
@@ -360,7 +376,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
         if (signErr) throw signErr;
         
         // Refresh data to update isSigned state
-        await fetchData();
+        await fetchData(false);
       } catch (err: any) {
         console.error('Error signing record:', err);
         alert(err.message || 'Failed to sign the record. Make sure the database table is created.');
@@ -498,7 +514,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
       setShowAddModal(false);
       setEditingItem(null);
       resetForm();
-      await fetchData();
+      await fetchData(false);
     } catch (err: any) {
       console.error('Error saving inventory:', err);
       alert(err.message || 'Error saving inventory item.');
@@ -520,7 +536,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
         // Sync stockbook sales to report
         await syncStockbookSalesToReport(selectedDate);
 
-        await fetchData();
+        await fetchData(false);
       } catch (err: any) {
         console.error('Error deleting inventory:', err);
         alert(err.message || 'Error deleting inventory item.');
@@ -568,7 +584,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
 
       setShowAddReportModal(false);
       resetReportForm();
-      await fetchData();
+      await fetchData(false);
     } catch (err: any) {
       console.error('Error saving report:', err);
       alert(err.message || 'Failed to save sales report.');
@@ -606,7 +622,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
       }
 
       setShowPosModal(false);
-      await fetchData();
+      await fetchData(false);
     } catch (err: any) {
       console.error('Error saving POS breakdown:', err);
       alert(err.message || 'Failed to save POS breakdown.');
@@ -975,7 +991,22 @@ export default function Inventory({ department: propDepartment }: InventoryProps
             <form onSubmit={handleSaveItem} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-neutral-700 mb-1">Item Name</label>
-                <input type="text" required value={name} onChange={(e) => setName(e.target.value)}
+                <input type="text" required value={name} 
+                  onChange={(e) => {
+                    const newName = e.target.value;
+                    setName(newName);
+                    if (!editingItem) {
+                      // Check if exists in previous day to auto-fill opening
+                      const prev = previousDayItems.find(p => p.name.toLowerCase() === newName.toLowerCase());
+                      if (prev) {
+                        setOpening(prev.closing);
+                        setUnitPrice(prev.unitPrice);
+                        setAddition(0);
+                        setSold(0);
+                        setWaste(0);
+                      }
+                    }
+                  }}
                   className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                   placeholder="e.g., Tusker Beer"
                   list="store-items-for-stockbook" />
