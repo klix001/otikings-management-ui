@@ -216,12 +216,16 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           invData = inserted;
         } else {
           // Sync fix: correct openings if previous day's closings have changed since the seed
+          // AND add any missing items that were added to the previous day after this day was seeded
           const updates: Promise<any>[] = [];
-          for (const currentItem of invData!) {
-            const prevItem = latestItems.find(
-              (p: any) => p.name.toLowerCase() === currentItem.name.toLowerCase()
+          const missingInserts: any[] = [];
+
+          for (const prevItem of latestItems) {
+            const currentItem = invData!.find(
+              (p: any) => p.name.toLowerCase() === prevItem.name.toLowerCase()
             );
-            if (prevItem) {
+            
+            if (currentItem) {
               const prevClosing = Number(prevItem.closing);
               const currentOpening = Number(currentItem.opening);
               if (Math.abs(prevClosing - currentOpening) > 0.0001) {
@@ -250,10 +254,37 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                 currentItem.total = newTotal;
                 currentItem.closing = newClosing;
               }
+            } else {
+              // Item exists in previous day but is missing today. Carry it forward!
+              missingInserts.push({
+                name: prevItem.name,
+                date: selectedDate,
+                opening: Number(prevItem.closing),
+                addition: 0,
+                total: Number(prevItem.closing),
+                unit_price: Number(prevItem.unit_price),
+                sold: 0,
+                waste: 0,
+                closing: Number(prevItem.closing),
+                department,
+              });
             }
           }
+
           if (updates.length > 0) {
             await Promise.all(updates);
+          }
+          
+          if (missingInserts.length > 0) {
+            const { data: insertedMissing, error: missingErr } = await supabase
+              .from('inventory_items')
+              .insert(missingInserts)
+              .select();
+            if (missingErr) {
+              console.error('Error inserting missing items:', missingErr);
+            } else if (insertedMissing) {
+              invData = [...invData!, ...insertedMissing];
+            }
           }
         }
       }
