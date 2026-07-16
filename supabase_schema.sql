@@ -245,6 +245,7 @@ CREATE TABLE IF NOT EXISTS sales_reports (
     pos_transfer NUMERIC NOT NULL DEFAULT 0 CHECK (pos_transfer >= 0),
     not_paid NUMERIC NOT NULL DEFAULT 0 CHECK (not_paid >= 0),
     additions_summary JSONB DEFAULT '[]'::jsonb,
+    pos_details JSONB DEFAULT '{}'::jsonb,
     department VARCHAR(50) NOT NULL DEFAULT 'bar' CHECK (department IN ('bar', 'kitchen')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     UNIQUE(date, department)

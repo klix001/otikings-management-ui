@@ -32,6 +32,13 @@ interface SalesReport {
   notPaid: number;
   stockbookSales: number;
   additionsSummary: { name: string; quantity: number }[];
+  posDetails?: {
+    total: number;
+    bar: number;
+    kitchen: number;
+    lodge: number;
+    creditors: string;
+  };
 }
 
 interface InventoryProps {
@@ -95,14 +102,24 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   // ─── Sales Report Form Fields ───
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
   const [cashAtHand, setCashAtHand] = useState<number | ''>('');
-  const [posTransfer, setPosTransfer] = useState<number | ''>('');
   const [notPaid, setNotPaid] = useState<number | ''>('');
   
+  // POS Breakdown Fields
+  const [posTotal, setPosTotal] = useState<number | ''>('');
+  const [posBar, setPosBar] = useState<number | ''>('');
+  const [posKitchen, setPosKitchen] = useState<number | ''>('');
+  const [posLodge, setPosLodge] = useState<number | ''>('');
+  const [posCreditors, setPosCreditors] = useState<string>('');
+
   const resetReportForm = (targetDate: string = selectedDate) => {
     setReportDate(targetDate);
     setCashAtHand('');
-    setPosTransfer('');
     setNotPaid('');
+    setPosTotal('');
+    setPosBar('');
+    setPosKitchen('');
+    setPosLodge('');
+    setPosCreditors('');
   };
 
   // ─── Data Fetching ─────────────────────────────────────────────────
@@ -198,6 +215,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           notPaid: Number(r.not_paid),
           stockbookSales: Number(r.stockbook_sales || 0),
           additionsSummary: r.additions_summary || [],
+          posDetails: r.pos_details || {},
         })));
       }
 
@@ -471,8 +489,23 @@ export default function Inventory({ department: propDepartment }: InventoryProps
     setSubmitting(true);
     
     const parsedCash = Number(cashAtHand) || 0;
-    const parsedPos = Number(posTransfer) || 0;
     const parsedNotPaid = Number(notPaid) || 0;
+    
+    const parsedPosTotal = Number(posTotal) || 0;
+    const parsedPosBar = Number(posBar) || 0;
+    const parsedPosKitchen = Number(posKitchen) || 0;
+    const parsedPosLodge = Number(posLodge) || 0;
+
+    // Use department to determine pos transfer
+    let parsedPos = 0;
+    if (department === 'bar') {
+      parsedPos = parsedPosBar;
+    } else if (department === 'kitchen') {
+      parsedPos = parsedPosKitchen;
+    } else {
+      parsedPos = parsedPosTotal; // fallback
+    }
+
     const totalSales = parsedCash + parsedPos + parsedNotPaid;
 
     // Automatically gather drinks/items added to stock book today
@@ -494,6 +527,13 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           not_paid: parsedNotPaid,
           stockbook_sales: calcStockbookSales,
           additions_summary: additionsSummary,
+          pos_details: {
+            total: parsedPosTotal,
+            bar: parsedPosBar,
+            kitchen: parsedPosKitchen,
+            lodge: parsedPosLodge,
+            creditors: posCreditors
+          },
           department,
         }]);
 
@@ -761,7 +801,14 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                             )}
                           </td>
                           <td className="px-6 py-4 text-sm text-green-700 text-right font-medium">₦ {report.cashAtHand.toLocaleString()}</td>
-                          <td className="px-6 py-4 text-sm text-blue-700 text-right font-medium">₦ {report.posTransfer.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="text-sm text-blue-700 font-medium">₦ {report.posTransfer.toLocaleString()}</div>
+                            {report.posDetails && report.posDetails.total !== undefined && (
+                              <div className="text-[10px] text-neutral-500 mt-1 whitespace-nowrap" title={`Total: ${report.posDetails.total} | Bar: ${report.posDetails.bar} | Kitch: ${report.posDetails.kitchen} | Lodge: ${report.posDetails.lodge}\nCreditors: ${report.posDetails.creditors}`}>
+                                T: {report.posDetails.total} | B: {report.posDetails.bar} | K: {report.posDetails.kitchen} | L: {report.posDetails.lodge}
+                              </div>
+                            )}
+                          </td>
                           <td className="px-6 py-4 text-sm text-red-700 text-right font-medium">₦ {report.notPaid.toLocaleString()}</td>
                           <td className="px-6 py-4 text-sm text-neutral-600">
                             {report.additionsSummary && report.additionsSummary.length > 0 ? (
@@ -916,11 +963,39 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                   <input type="number" min="0" required value={cashAtHand} onChange={(e) => setCashAtHand(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-1">POS / Transfer (₦)</label>
-                  <input type="number" min="0" required value={posTransfer} onChange={(e) => setPosTransfer(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                
+                <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+                  <h3 className="text-sm font-bold text-blue-900 mb-3 border-b border-blue-200 pb-2">POS Breakdown</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-blue-800 mb-1">Total POS (₦)</label>
+                      <input type="number" min="0" required value={posTotal} onChange={(e) => setPosTotal(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-blue-800 mb-1">Bar (₦)</label>
+                      <input type="number" min="0" required value={posBar} onChange={(e) => setPosBar(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-blue-800 mb-1">Kitchen (₦)</label>
+                      <input type="number" min="0" required value={posKitchen} onChange={(e) => setPosKitchen(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-blue-800 mb-1">Lodge (₦)</label>
+                      <input type="number" min="0" required value={posLodge} onChange={(e) => setPosLodge(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-blue-800 mb-1">Creditor Names & Amounts</label>
+                    <textarea value={posCreditors} onChange={(e) => setPosCreditors(e.target.value)}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                      placeholder="e.g. John Doe: 2000, Jane Smith: 1500" rows={2} />
+                  </div>
                 </div>
+
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 mb-1">Not Paid (Debt) (₦)</label>
                   <input type="number" min="0" required value={notPaid} onChange={(e) => setNotPaid(e.target.value === '' ? '' : Number(e.target.value))}
@@ -939,7 +1014,8 @@ export default function Inventory({ department: propDepartment }: InventoryProps
 
               {/* Reconciliation preview */}
               {(() => {
-                const received = (Number(cashAtHand) || 0) + (Number(posTransfer) || 0) + (Number(notPaid) || 0);
+                const depPos = department === 'bar' ? (Number(posBar) || 0) : (Number(posKitchen) || 0);
+                const received = (Number(cashAtHand) || 0) + depPos + (Number(notPaid) || 0);
                 const diff = received - calcStockbookSales;
                 const isMatch = Math.abs(diff) < 1;
                 return (
