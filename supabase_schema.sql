@@ -28,13 +28,13 @@ ON CONFLICT DO NOTHING;
 CREATE TABLE IF NOT EXISTS inventory_items (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    opening INTEGER NOT NULL DEFAULT 0 CHECK (opening >= 0),
-    addition INTEGER NOT NULL DEFAULT 0 CHECK (addition >= 0),
-    total INTEGER NOT NULL DEFAULT 0 CHECK (total >= 0),
+    opening NUMERIC NOT NULL DEFAULT 0 CHECK (opening >= 0),
+    addition NUMERIC NOT NULL DEFAULT 0 CHECK (addition >= 0),
+    total NUMERIC NOT NULL DEFAULT 0 CHECK (total >= 0),
     unit_price NUMERIC NOT NULL DEFAULT 0 CHECK (unit_price >= 0),
-    sold INTEGER NOT NULL DEFAULT 0 CHECK (sold >= 0),
-    waste INTEGER NOT NULL DEFAULT 0 CHECK (waste >= 0),
-    closing INTEGER NOT NULL DEFAULT 0 CHECK (closing >= 0),
+    sold NUMERIC NOT NULL DEFAULT 0 CHECK (sold >= 0),
+    waste NUMERIC NOT NULL DEFAULT 0 CHECK (waste >= 0),
+    closing NUMERIC NOT NULL DEFAULT 0 CHECK (closing >= 0),
     department VARCHAR(50) NOT NULL DEFAULT 'bar' CHECK (department IN ('bar', 'kitchen')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
