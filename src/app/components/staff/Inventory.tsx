@@ -262,19 +262,23 @@ export default function Inventory({ department: propDepartment }: InventoryProps
         closing: Number(item.closing),
       })));
 
-      // 2. Fetch store inventory
-      const { data: storeData } = await supabase
-        .from('store_inventory')
-        .select('id, name, closing, loaded')
-        .eq('department', department);
+      // 2. Fetch store inventory (bar only — kitchen has no store)
+      if (department === 'bar') {
+        const { data: storeData } = await supabase
+          .from('store_inventory')
+          .select('id, name, closing, loaded')
+          .eq('department', department);
 
-      if (storeData) {
-        setStoreItems(storeData.map((s: any) => ({
-          id: Number(s.id),
-          name: s.name,
-          closing: Number(s.closing),
-          loaded: Number(s.loaded),
-        })));
+        if (storeData) {
+          setStoreItems(storeData.map((s: any) => ({
+            id: Number(s.id),
+            name: s.name,
+            closing: Number(s.closing),
+            loaded: Number(s.loaded),
+          })));
+        }
+      } else {
+        setStoreItems([]);
       }
 
       // 3. Fetch all sales reports (not filtered by date — shows history)
@@ -453,8 +457,8 @@ export default function Inventory({ department: propDepartment }: InventoryProps
     const calculatedTotal = parsedOpening + parsedAddition;
     const calculatedClosing = calculatedTotal - parsedSold - parsedWaste;
 
-    // Normalize name: use existing store item casing if match found
-    const matchingStoreItem = storeItems.find((s) => s.name.toLowerCase() === name.trim().toLowerCase());
+    // Normalize name: use existing store item casing if match found (bar only)
+    const matchingStoreItem = department === 'bar' ? storeItems.find((s) => s.name.toLowerCase() === name.trim().toLowerCase()) : null;
     const normalizedName = matchingStoreItem ? matchingStoreItem.name : name.trim();
 
     // Case-insensitive duplicate check: prevent adding same item name on same date
@@ -469,21 +473,23 @@ export default function Inventory({ department: propDepartment }: InventoryProps
       }
     }
 
-    // Calculate how many units are being taken from store
+    // Calculate how many units are being taken from store (bar only)
     let storeDeduction = 0;
-    if (editingItem) {
-      storeDeduction = parsedAddition - editingItem.addition;
-    } else {
-      storeDeduction = parsedAddition;
-    }
+    if (department === 'bar') {
+      if (editingItem) {
+        storeDeduction = parsedAddition - editingItem.addition;
+      } else {
+        storeDeduction = parsedAddition;
+      }
 
-    // Check store has enough stock if we're deducting
-    if (storeDeduction > 0) {
-      const available = getStoreStock(normalizedName);
-      if (available < storeDeduction) {
-        alert(`Insufficient store stock for "${normalizedName}". Available: ${available} units, Requested: ${storeDeduction} units. Please receive a supplier delivery first.`);
-        setSubmitting(false);
-        return;
+      // Check store has enough stock if we're deducting
+      if (storeDeduction > 0) {
+        const available = getStoreStock(normalizedName);
+        if (available < storeDeduction) {
+          alert(`Insufficient store stock for "${normalizedName}". Available: ${available} units, Requested: ${storeDeduction} units. Please receive a supplier delivery first.`);
+          setSubmitting(false);
+          return;
+        }
       }
     }
 
@@ -523,8 +529,8 @@ export default function Inventory({ department: propDepartment }: InventoryProps
         if (insertError) throw insertError;
       }
 
-      // Deduct from store if addition increased
-      if (storeDeduction > 0) {
+      // Deduct from store if addition increased (bar only)
+      if (department === 'bar' && storeDeduction > 0) {
         const storeItem = storeItems.find((s) => s.name.toLowerCase() === normalizedName.toLowerCase());
         if (storeItem) {
           const newLoaded = storeItem.loaded + storeDeduction;
@@ -1061,14 +1067,14 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                     className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-1">Addition (from Store)</label>
+                  <label className="block text-sm font-semibold text-neutral-700 mb-1">{department === 'bar' ? 'Addition (from Store)' : 'Addition'}</label>
                   <input type="number" min="0" required value={addition} onChange={(e) => setAddition(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                 </div>
               </div>
 
-              {/* Store stock indicator */}
-              {name && (
+              {/* Store stock indicator (bar only) */}
+              {department === 'bar' && name && (
                 <div className={`p-3 rounded-lg border text-sm font-medium ${
                   getStoreStock(name) > 0 
                     ? 'bg-blue-50 border-blue-200 text-blue-800' 
