@@ -245,7 +245,6 @@ CREATE TABLE IF NOT EXISTS sales_reports (
     pos_transfer NUMERIC NOT NULL DEFAULT 0 CHECK (pos_transfer >= 0),
     not_paid NUMERIC NOT NULL DEFAULT 0 CHECK (not_paid >= 0),
     additions_summary JSONB DEFAULT '[]'::jsonb,
-    pos_details JSONB DEFAULT '{}'::jsonb,
     department VARCHAR(50) NOT NULL DEFAULT 'bar' CHECK (department IN ('bar', 'kitchen')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     UNIQUE(date, department)
@@ -257,7 +256,26 @@ INSERT INTO sales_reports (date, total_sales, cash_at_hand, pos_transfer, not_pa
 ON CONFLICT DO NOTHING;
 
 -- -------------------------------------------------------------
--- 12. Daily Signatures Table
+-- 12. POS Breakdowns Table
+-- -------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS pos_breakdowns (
+    id BIGSERIAL PRIMARY KEY,
+    date DATE UNIQUE NOT NULL,
+    total_pos NUMERIC NOT NULL DEFAULT 0 CHECK (total_pos >= 0),
+    bar NUMERIC NOT NULL DEFAULT 0 CHECK (bar >= 0),
+    kitchen NUMERIC NOT NULL DEFAULT 0 CHECK (kitchen >= 0),
+    lodge NUMERIC NOT NULL DEFAULT 0 CHECK (lodge >= 0),
+    creditors TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Insert Mock Data for Sales Reports
+INSERT INTO sales_reports (date, total_sales, cash_at_hand, pos_transfer, not_paid, additions_summary, department) VALUES
+('2026-06-17', 25000, 10000, 15000, 0, '[{"name": "Tusker Beer", "quantity": 24}, {"name": "Guinness", "quantity": 12}]'::jsonb, 'bar')
+ON CONFLICT DO NOTHING;
+
+-- -------------------------------------------------------------
+-- 13. Daily Signatures Table
 -- -------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS daily_signatures (
     id BIGSERIAL PRIMARY KEY,

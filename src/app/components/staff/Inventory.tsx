@@ -32,20 +32,24 @@ interface SalesReport {
   notPaid: number;
   stockbookSales: number;
   additionsSummary: { name: string; quantity: number }[];
-  posDetails?: {
-    total: number;
-    bar: number;
-    kitchen: number;
-    lodge: number;
-    creditors: string;
-  };
+  posDetails?: any; // kept for legacy reports before the migration
+}
+
+interface PosBreakdown {
+  id: number;
+  date: string;
+  totalPos: number;
+  bar: number;
+  kitchen: number;
+  lodge: number;
+  creditors: string;
 }
 
 interface InventoryProps {
   department?: 'bar' | 'kitchen';
 }
 
-type Tab = 'stockbook' | 'sales_report';
+type Tab = 'stockbook' | 'sales_report' | 'pos_breakdown';
 
 // ─── Component ──────────────────────────────────────────────────────
 export default function Inventory({ department: propDepartment }: InventoryProps) {
@@ -65,6 +69,9 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   
   // Sales Report state
   const [salesReports, setSalesReports] = useState<SalesReport[]>([]);
+  
+  // POS Breakdowns state
+  const [posBreakdowns, setPosBreakdowns] = useState<PosBreakdown[]>([]);
 
   // Track whether the selected day's stockbook has been signed/closed
   const [isSigned, setIsSigned] = useState(false);
@@ -80,6 +87,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   
   const [showAddReportModal, setShowAddReportModal] = useState(false);
+  const [showPosModal, setShowPosModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // ─── Stockbook Form Fields ───
@@ -102,6 +110,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   // ─── Sales Report Form Fields ───
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
   const [cashAtHand, setCashAtHand] = useState<number | ''>('');
+  const [posTransfer, setPosTransfer] = useState<number | ''>('');
   const [notPaid, setNotPaid] = useState<number | ''>('');
   
   // POS Breakdown Fields
@@ -115,11 +124,30 @@ export default function Inventory({ department: propDepartment }: InventoryProps
     setReportDate(targetDate);
     setCashAtHand('');
     setNotPaid('');
-    setPosTotal('');
-    setPosBar('');
-    setPosKitchen('');
-    setPosLodge('');
-    setPosCreditors('');
+    // Auto-fill posTransfer from current date's breakdown
+    const breakdown = posBreakdowns.find(p => p.date === targetDate);
+    if (breakdown) {
+      setPosTransfer(department === 'bar' ? breakdown.bar : breakdown.kitchen);
+    } else {
+      setPosTransfer('');
+    }
+  };
+
+  const resetPosForm = (targetDate: string = selectedDate) => {
+    const existing = posBreakdowns.find(p => p.date === targetDate);
+    if (existing) {
+      setPosTotal(existing.totalPos);
+      setPosBar(existing.bar);
+      setPosKitchen(existing.kitchen);
+      setPosLodge(existing.lodge);
+      setPosCreditors(existing.creditors || '');
+    } else {
+      setPosTotal('');
+      setPosBar('');
+      setPosKitchen('');
+      setPosLodge('');
+      setPosCreditors('');
+    }
   };
 
   // ─── Data Fetching ─────────────────────────────────────────────────
@@ -215,7 +243,27 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           notPaid: Number(r.not_paid),
           stockbookSales: Number(r.stockbook_sales || 0),
           additionsSummary: r.additions_summary || [],
-          posDetails: r.pos_details || {},
+          posDetails: r.pos_details, // legacy
+        })));
+      }
+
+      // 3b. Fetch POS breakdowns
+      const { data: posData, error: posErr } = await supabase
+        .from('pos_breakdowns')
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (posErr) throw posErr;
+
+      if (posData) {
+        setPosBreakdowns(posData.map((p: any) => ({
+          id: Number(p.id),
+          date: p.date,
+          totalPos: Number(p.total_pos),
+          bar: Number(p.bar),
+          kitchen: Number(p.kitchen),
+          lodge: Number(p.lodge),
+          creditors: p.creditors || '',
         })));
       }
 
@@ -489,23 +537,9 @@ export default function Inventory({ department: propDepartment }: InventoryProps
     setSubmitting(true);
     
     const parsedCash = Number(cashAtHand) || 0;
+    const parsedPos = Number(posTransfer) || 0;
     const parsedNotPaid = Number(notPaid) || 0;
     
-    const parsedPosTotal = Number(posTotal) || 0;
-    const parsedPosBar = Number(posBar) || 0;
-    const parsedPosKitchen = Number(posKitchen) || 0;
-    const parsedPosLodge = Number(posLodge) || 0;
-
-    // Use department to determine pos transfer
-    let parsedPos = 0;
-    if (department === 'bar') {
-      parsedPos = parsedPosBar;
-    } else if (department === 'kitchen') {
-      parsedPos = parsedPosKitchen;
-    } else {
-      parsedPos = parsedPosTotal; // fallback
-    }
-
     const totalSales = parsedCash + parsedPos + parsedNotPaid;
 
     // Automatically gather drinks/items added to stock book today
@@ -527,13 +561,6 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           not_paid: parsedNotPaid,
           stockbook_sales: calcStockbookSales,
           additions_summary: additionsSummary,
-          pos_details: {
-            total: parsedPosTotal,
-            bar: parsedPosBar,
-            kitchen: parsedPosKitchen,
-            lodge: parsedPosLodge,
-            creditors: posCreditors
-          },
           department,
         }]);
 
@@ -545,6 +572,44 @@ export default function Inventory({ department: propDepartment }: InventoryProps
     } catch (err: any) {
       console.error('Error saving report:', err);
       alert(err.message || 'Failed to save sales report.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSavePosBreakdown = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    
+    try {
+      const payload = {
+        date: selectedDate,
+        total_pos: Number(posTotal) || 0,
+        bar: Number(posBar) || 0,
+        kitchen: Number(posKitchen) || 0,
+        lodge: Number(posLodge) || 0,
+        creditors: posCreditors
+      };
+
+      const existing = posBreakdowns.find(p => p.date === selectedDate);
+      if (existing) {
+        const { error: updateErr } = await supabase
+          .from('pos_breakdowns')
+          .update(payload)
+          .eq('id', existing.id);
+        if (updateErr) throw updateErr;
+      } else {
+        const { error: insertErr } = await supabase
+          .from('pos_breakdowns')
+          .insert([payload]);
+        if (insertErr) throw insertErr;
+      }
+
+      setShowPosModal(false);
+      await fetchData();
+    } catch (err: any) {
+      console.error('Error saving POS breakdown:', err);
+      alert(err.message || 'Failed to save POS breakdown.');
     } finally {
       setSubmitting(false);
     }
@@ -572,6 +637,14 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           <span className="flex items-center gap-2 px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-sm font-semibold border border-amber-300">
             Read Only
           </span>
+        ) : activeTab === 'pos_breakdown' ? (
+          <button
+            onClick={() => { resetPosForm(selectedDate); setShowPosModal(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-5 h-5" />
+            <span className="hidden sm:inline">Add / Edit POS Breakdown</span>
+          </button>
         ) : (
           <button
             onClick={() => { resetReportForm(selectedDate); setShowAddReportModal(true); }}
@@ -663,6 +736,17 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           >
             <FileText className="w-4 h-4" />
             Sales Reports
+          </button>
+          <button
+            onClick={() => setActiveTab('pos_breakdown')}
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
+              activeTab === 'pos_breakdown'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            POS Breakdown
           </button>
         </nav>
       </div>
@@ -838,6 +922,46 @@ export default function Inventory({ department: propDepartment }: InventoryProps
               </div>
             </div>
           )}
+          {/* ─── Tab 3: POS Breakdowns ─────────────────────────────────── */}
+          {activeTab === 'pos_breakdown' && (
+            <div className="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-neutral-50 border-b border-neutral-200">
+                    <tr>
+                      <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Date</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-blue-700 bg-blue-50">Total POS (₦)</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900">Bar (₦)</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900">Kitchen (₦)</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900">Lodge (₦)</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-900">Creditors</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-200">
+                    {posBreakdowns.map((pb) => (
+                      <tr key={pb.id} className="hover:bg-neutral-50 transition-colors">
+                        <td className="px-6 py-4 text-sm font-semibold text-neutral-900 whitespace-nowrap">{pb.date}</td>
+                        <td className="px-6 py-4 text-sm font-bold text-blue-700 text-right bg-blue-50">
+                          ₦ {pb.totalPos.toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-neutral-700 text-right font-medium">₦ {pb.bar.toLocaleString()}</td>
+                        <td className="px-6 py-4 text-sm text-neutral-700 text-right font-medium">₦ {pb.kitchen.toLocaleString()}</td>
+                        <td className="px-6 py-4 text-sm text-neutral-700 text-right font-medium">₦ {pb.lodge.toLocaleString()}</td>
+                        <td className="px-6 py-4 text-sm text-neutral-600 whitespace-pre-wrap">{pb.creditors || '-'}</td>
+                      </tr>
+                    ))}
+                    {posBreakdowns.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-10 text-center text-sm text-neutral-500">
+                          No POS Breakdowns recorded. Click "Add / Edit POS Breakdown" to submit.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -964,36 +1088,11 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                     className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 
-                <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
-                  <h3 className="text-sm font-bold text-blue-900 mb-3 border-b border-blue-200 pb-2">POS Breakdown</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-blue-800 mb-1">Total POS (₦)</label>
-                      <input type="number" min="0" required value={posTotal} onChange={(e) => setPosTotal(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-blue-800 mb-1">Bar (₦)</label>
-                      <input type="number" min="0" required value={posBar} onChange={(e) => setPosBar(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-blue-800 mb-1">Kitchen (₦)</label>
-                      <input type="number" min="0" required value={posKitchen} onChange={(e) => setPosKitchen(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-blue-800 mb-1">Lodge (₦)</label>
-                      <input type="number" min="0" required value={posLodge} onChange={(e) => setPosLodge(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-blue-800 mb-1">Creditor Names & Amounts</label>
-                    <textarea value={posCreditors} onChange={(e) => setPosCreditors(e.target.value)}
-                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
-                      placeholder="e.g. John Doe: 2000, Jane Smith: 1500" rows={2} />
-                  </div>
+                <div>
+                  <label className="block text-sm font-semibold text-neutral-700 mb-1">POS / Transfer (₦)</label>
+                  <input type="number" min="0" required value={posTransfer} onChange={(e) => setPosTransfer(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full px-4 py-2 border border-neutral-300 rounded-lg bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <p className="text-xs text-neutral-500 mt-1">This value is auto-filled from the POS Breakdown tab for {department}, but you can override it if necessary.</p>
                 </div>
 
                 <div>
@@ -1014,8 +1113,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
 
               {/* Reconciliation preview */}
               {(() => {
-                const depPos = department === 'bar' ? (Number(posBar) || 0) : (Number(posKitchen) || 0);
-                const received = (Number(cashAtHand) || 0) + depPos + (Number(notPaid) || 0);
+                const received = (Number(cashAtHand) || 0) + (Number(posTransfer) || 0) + (Number(notPaid) || 0);
                 const diff = received - calcStockbookSales;
                 const isMatch = Math.abs(diff) < 1;
                 return (
@@ -1065,6 +1163,65 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-75">
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Submit Report
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Add/Edit POS Breakdown Modal ──────────────────────────── */}
+      {showPosModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[95vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold text-neutral-900 mb-4">Submit POS Breakdown</h2>
+            <form onSubmit={handleSavePosBreakdown} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-neutral-700 mb-1">Date</label>
+                <input type="date" required disabled value={selectedDate}
+                  className="w-full px-4 py-2 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-500 cursor-not-allowed focus:outline-none" />
+              </div>
+              
+              <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-blue-800 mb-1">Total POS (₦)</label>
+                    <input type="number" min="0" required value={posTotal} onChange={(e) => setPosTotal(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-blue-800 mb-1">Bar (₦)</label>
+                    <input type="number" min="0" required value={posBar} onChange={(e) => setPosBar(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-blue-800 mb-1">Kitchen (₦)</label>
+                    <input type="number" min="0" required value={posKitchen} onChange={(e) => setPosKitchen(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-blue-800 mb-1">Lodge (₦)</label>
+                    <input type="number" min="0" required value={posLodge} onChange={(e) => setPosLodge(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-blue-800 mb-1">Creditor Names & Amounts</label>
+                  <textarea value={posCreditors} onChange={(e) => setPosCreditors(e.target.value)}
+                    className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                    placeholder="e.g. John Doe: 2000, Jane Smith: 1500" rows={2} />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowPosModal(false)}
+                  className="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={submitting}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-75">
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Save Breakdown
                 </button>
               </div>
             </form>
