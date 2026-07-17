@@ -214,20 +214,20 @@ export default function Creditors({ department: propDepartment }: CreditorsProps
             <table className="w-full text-left border-collapse">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
-                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Date</th>
-                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Customer</th>
-                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Details</th>
+                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Name</th>
+                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Item Bought</th>
+                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Reason</th>
                   <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900">Amount</th>
                   <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Phone</th>
                   <th className="px-6 py-3 text-center text-sm font-semibold text-neutral-900">Status</th>
-                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Payment</th>
+                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Date</th>
+                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Payment Date</th>
                   <th className="px-6 py-3 text-center text-sm font-semibold text-neutral-900">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200">
                 {creditors.map((creditor) => (
                   <tr key={creditor.id} className="hover:bg-neutral-50 transition-colors">
-                    <td className="px-6 py-4 text-sm text-neutral-600">{creditor.date}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-neutral-900">{creditor.name}</td>
                     <td className="px-6 py-4 text-sm text-neutral-600">{creditor.itemBought || '-'}</td>
                     <td className="px-6 py-4 text-sm text-neutral-600">{creditor.reason || '-'}</td>
