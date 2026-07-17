@@ -606,23 +606,42 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   };
 
   const handleDeleteItem = async (id: number) => {
-    if (window.confirm('Are you sure you want to delete this inventory item?')) {
-      try {
-        const { error: deleteError } = await supabase
-          .from('inventory_items')
-          .delete()
-          .eq('id', id);
+    const itemToDelete = inventory.find((item) => item.id === id);
+    if (!itemToDelete) return;
 
-        if (deleteError) throw deleteError;
+    const userInput = window.prompt(`Type "delete" to confirm removing ${itemToDelete.name}:`);
+    if (userInput?.toLowerCase() !== 'delete') {
+      return;
+    }
 
-        // Sync stockbook sales to report
-        await syncStockbookSalesToReport(selectedDate);
+    try {
+      const { error: deleteError } = await supabase
+        .from('inventory_items')
+        .delete()
+        .eq('id', id);
 
-        await fetchData(false);
-      } catch (err: any) {
-        console.error('Error deleting inventory:', err);
-        alert(err.message || 'Error deleting inventory item.');
+      if (deleteError) throw deleteError;
+
+      // If we are deleting a bar item with an addition, restore it to store_inventory
+      if (department === 'bar' && itemToDelete.addition > 0) {
+        const storeItem = storeItems.find((s) => s.name.toLowerCase() === itemToDelete.name.toLowerCase());
+        if (storeItem) {
+          const newLoaded = storeItem.loaded - itemToDelete.addition;
+          const newClosing = storeItem.closing + itemToDelete.addition;
+          await supabase
+            .from('store_inventory')
+            .update({ loaded: newLoaded, closing: newClosing, updated_at: new Date().toISOString() })
+            .eq('id', storeItem.id);
+        }
       }
+
+      // Sync stockbook sales to report
+      await syncStockbookSalesToReport(selectedDate);
+
+      await fetchData(false);
+    } catch (err: any) {
+      console.error('Error deleting inventory:', err);
+      alert(err.message || 'Error deleting inventory item.');
     }
   };
 

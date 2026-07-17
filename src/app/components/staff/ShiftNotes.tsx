@@ -110,7 +110,10 @@ export default function ShiftNotes() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this note?')) return;
+    const userInput = window.prompt('Type "delete" to confirm:');
+    if (userInput?.toLowerCase() !== 'delete') {
+      return;
+    }
     try {
       const { error: delErr } = await supabase
         .from('shift_notes')

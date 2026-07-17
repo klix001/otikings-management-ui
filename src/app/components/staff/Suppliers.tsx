@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Eye, Loader2, AlertCircle, Package, ArrowRight, Truck, Upload, Pencil } from 'lucide-react';
+import { Plus, Eye, Loader2, AlertCircle, Package, ArrowRight, Truck, Upload, Pencil, Trash2 } from 'lucide-react';
 import { useLocation } from 'react-router';
 import { supabase } from '../../lib/supabase';
 
@@ -494,6 +494,32 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
     return { label: 'Critically Low', class: 'bg-red-100 text-red-700' };
   };
 
+  const handleDeleteDelivery = async (id: number) => {
+    const userInput = window.prompt('Type "delete" to confirm:');
+    if (userInput?.toLowerCase() !== 'delete') return;
+
+    try {
+      const { error } = await supabase.from('supplier_deliveries').delete().eq('id', id);
+      if (error) throw error;
+      await fetchAll();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete delivery.');
+    }
+  };
+
+  const handleDeleteStoreItem = async (id: number) => {
+    const userInput = window.prompt('Type "delete" to confirm:');
+    if (userInput?.toLowerCase() !== 'delete') return;
+
+    try {
+      const { error } = await supabase.from('store_inventory').delete().eq('id', id);
+      if (error) throw error;
+      await fetchAll();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete store item.');
+    }
+  };
+
   // ─── Render ────────────────────────────────────────────────────────
   return (
     <div className="max-w-7xl">
@@ -649,6 +675,12 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
                             >
                               <Pencil className="w-4 h-4" /> Edit
                             </button>
+                            <button
+                              onClick={() => handleDeleteDelivery(entry.id)}
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium ml-2"
+                            >
+                              <Trash2 className="w-4 h-4" /> Delete
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -722,6 +754,12 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
                                 className="inline-flex items-center gap-1 px-3 py-1 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium"
                               >
                                 <Pencil className="w-4 h-4" /> Edit Opening
+                              </button>
+                              <button
+                                onClick={() => handleDeleteStoreItem(item.id)}
+                                className="inline-flex items-center gap-1 px-3 py-1 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium ml-2"
+                              >
+                                <Trash2 className="w-4 h-4" /> Delete
                               </button>
                             </td>
                           </tr>

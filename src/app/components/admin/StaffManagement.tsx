@@ -304,7 +304,8 @@ export default function StaffManagement() {
   };
 
   const handleDeleteProfile = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete profile for ${name}? they will no longer be able to log in.`)) {
+    const userInput = window.prompt(`Type "delete" to confirm deleting profile for ${name}:`);
+    if (userInput?.toLowerCase() !== 'delete') {
       return;
     }
 
