@@ -186,13 +186,12 @@ export default function AdminCreditors() {
             <table className="w-full text-left border-collapse">
               <thead className="bg-neutral-50 border-b border-neutral-200">
                 <tr>
-                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Name</th>
-                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Item Bought</th>
-                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Reason</th>
+                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Date</th>
+                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Customer</th>
+                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Details</th>
                   <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900">Amount</th>
                   <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Phone</th>
                   <th className="px-6 py-3 text-center text-sm font-semibold text-neutral-900">Status</th>
-                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Date</th>
                   <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Payment Date</th>
                   <th className="px-6 py-3 text-center text-sm font-semibold text-neutral-900">Action</th>
                 </tr>
@@ -200,9 +199,15 @@ export default function AdminCreditors() {
               <tbody className="divide-y divide-neutral-200">
                 {filteredCreditors.map((creditor) => (
                   <tr key={creditor.id} className="hover:bg-neutral-50 transition-colors">
+                    <td className="px-6 py-4 text-sm text-neutral-600">{creditor.date}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-neutral-900">{creditor.name}</td>
-                    <td className="px-6 py-4 text-sm text-neutral-600">{creditor.itemBought || '-'}</td>
-                    <td className="px-6 py-4 text-sm text-neutral-600">{creditor.reason || '-'}</td>
+                    <td className="px-6 py-4 text-sm text-neutral-600">
+                      <div className="max-w-[200px]">
+                        {creditor.itemBought && <div>{creditor.itemBought}</div>}
+                        {creditor.reason && <div className="text-xs text-neutral-500 mt-1">{creditor.reason}</div>}
+                        {!creditor.itemBought && !creditor.reason && '-'}
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-sm font-semibold text-neutral-900 text-right">
                       ₦ {creditor.amount.toLocaleString()}
                     </td>
@@ -227,7 +232,6 @@ export default function AdminCreditors() {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-neutral-600">{creditor.date}</td>
                     <td className="px-6 py-4 text-sm text-neutral-600">
                       {creditor.paymentDate || '-'}
                     </td>
