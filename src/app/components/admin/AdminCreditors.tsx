@@ -249,7 +249,7 @@ export default function AdminCreditors() {
                 ))}
                 {filteredCreditors.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-10 text-center text-sm text-neutral-500">
+                    <td colSpan={8} className="px-6 py-10 text-center text-sm text-neutral-500">
                       No creditors found.
                     </td>
                   </tr>

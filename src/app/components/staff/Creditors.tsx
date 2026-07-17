@@ -277,7 +277,7 @@ export default function Creditors({ department: propDepartment }: CreditorsProps
                 ))}
                 {creditors.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-10 text-center text-sm text-neutral-500">
+                    <td colSpan={8} className="px-6 py-10 text-center text-sm text-neutral-500">
                       No creditors recorded. Click "Add Creditor" to track a new credit transaction.
                     </td>
                   </tr>
