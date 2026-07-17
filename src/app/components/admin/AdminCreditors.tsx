@@ -192,7 +192,6 @@ export default function AdminCreditors() {
                   <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900">Amount</th>
                   <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Phone</th>
                   <th className="px-6 py-3 text-center text-sm font-semibold text-neutral-900">Status</th>
-                  <th className="px-6 py-3 text-sm font-semibold text-neutral-900">Payment Date</th>
                   <th className="px-6 py-3 text-center text-sm font-semibold text-neutral-900">Action</th>
                 </tr>
               </thead>
@@ -232,9 +231,6 @@ export default function AdminCreditors() {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-neutral-600">
-                      {creditor.paymentDate || '-'}
-                    </td>
                     <td className="px-6 py-4 text-center">
                       {creditor.status === 'UNPAID' && (
                         <button
@@ -249,7 +245,7 @@ export default function AdminCreditors() {
                 ))}
                 {filteredCreditors.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-10 text-center text-sm text-neutral-500">
+                    <td colSpan={7} className="px-6 py-10 text-center text-sm text-neutral-500">
                       No creditors found.
                     </td>
                   </tr>
