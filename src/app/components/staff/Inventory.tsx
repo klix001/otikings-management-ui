@@ -234,7 +234,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
         } else {
           // Sync fix: correct openings if previous day's closings have changed since the seed
           // AND add any missing items that were added to the previous day after this day was seeded
-          const updates: Promise<any>[] = [];
+          const updates: PromiseLike<any>[] = [];
           const missingInserts: any[] = [];
 
           for (const prevItem of latestItems) {
@@ -1034,7 +1034,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           <p className="text-red-800 font-semibold mb-2">Error Connecting to Database</p>
           <p className="text-red-600 text-sm max-w-md mb-4">{error}</p>
           <button
-            onClick={fetchData}
+            onClick={() => fetchData()}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium text-sm"
           >
             Retry Connection
