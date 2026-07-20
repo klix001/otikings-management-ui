@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     name VARCHAR(255) NOT NULL,
     opening NUMERIC NOT NULL DEFAULT 0 CHECK (opening >= 0),
     addition NUMERIC NOT NULL DEFAULT 0 CHECK (addition >= 0),
+    borrowed NUMERIC NOT NULL DEFAULT 0 CHECK (borrowed >= 0),
     total NUMERIC NOT NULL DEFAULT 0 CHECK (total >= 0),
     unit_price NUMERIC NOT NULL DEFAULT 0 CHECK (unit_price >= 0),
     sold NUMERIC NOT NULL DEFAULT 0 CHECK (sold >= 0),
@@ -40,13 +41,13 @@ CREATE TABLE IF NOT EXISTS inventory_items (
 );
 
 -- Insert Mock Data for Inventory Items
-INSERT INTO inventory_items (name, opening, addition, total, unit_price, sold, waste, closing, department) VALUES
-('Tusker Beer', 200, 100, 300, 250, 150, 5, 145, 'bar'),
-('Guinness', 150, 50, 200, 300, 80, 2, 118, 'bar'),
-('Pilsner', 180, 120, 300, 240, 140, 3, 157, 'bar'),
-('White Cap', 100, 80, 180, 260, 90, 1, 89, 'bar'),
-('Coca Cola', 300, 200, 500, 80, 250, 10, 240, 'bar'),
-('Fanta Orange', 250, 150, 400, 80, 200, 8, 192, 'bar')
+INSERT INTO inventory_items (name, opening, addition, borrowed, total, unit_price, sold, waste, closing, department) VALUES
+('Tusker Beer', 200, 100, 0, 300, 250, 150, 5, 145, 'bar'),
+('Guinness', 150, 50, 0, 200, 300, 80, 2, 118, 'bar'),
+('Pilsner', 180, 120, 0, 300, 240, 140, 3, 157, 'bar'),
+('White Cap', 100, 80, 0, 180, 260, 90, 1, 89, 'bar'),
+('Coca Cola', 300, 200, 0, 500, 80, 250, 10, 240, 'bar'),
+('Fanta Orange', 250, 150, 0, 400, 80, 200, 8, 192, 'bar')
 ON CONFLICT DO NOTHING;
 
 
