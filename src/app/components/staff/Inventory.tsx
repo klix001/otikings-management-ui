@@ -77,10 +77,10 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   // Stockbook state
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [storeItems, setStoreItems] = useState<StoreItem[]>([]);
-  
+
   // Sales Report state
   const [salesReports, setSalesReports] = useState<SalesReport[]>([]);
-  
+
   // POS Breakdowns state
   const [posBreakdowns, setPosBreakdowns] = useState<PosBreakdown[]>([]);
 
@@ -106,7 +106,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-  
+
   const [showAddReportModal, setShowAddReportModal] = useState(false);
   const [showPosModal, setShowPosModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -135,7 +135,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   const [cashAtHand, setCashAtHand] = useState<number | ''>('');
   const [posTransfer, setPosTransfer] = useState<number | ''>('');
   const [notPaid, setNotPaid] = useState<number | ''>('');
-  
+
   // POS Breakdown Fields
   const [posTotal, setPosTotal] = useState<number | ''>('');
   const [posBar, setPosBar] = useState<number | ''>('');
@@ -211,7 +211,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           waste: Number(item.waste),
           closing: Number(item.closing),
         })));
-        
+
         // Auto carry-forward: if the selected date has no items, seed from previous day's closing
         if (!invData || invData.length === 0) {
           const inserts = latestItems.map((prev: any) => ({
@@ -246,7 +246,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
             const currentItem = invData!.find(
               (p: any) => p.name.toLowerCase() === prevItem.name.toLowerCase()
             );
-            
+
             if (currentItem) {
               const prevClosing = Number(prevItem.closing);
               const currentOpening = Number(currentItem.opening);
@@ -258,7 +258,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                 const newSold = Number(currentItem.sold);
                 const newWaste = Number(currentItem.waste);
                 const newClosing = newTotal - newSold - newWaste;
-                
+
                 updates.push(
                   supabase
                     .from('inventory_items')
@@ -298,7 +298,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           if (updates.length > 0) {
             await Promise.all(updates);
           }
-          
+
           if (missingInserts.length > 0) {
             const { data: insertedMissing, error: missingErr } = await supabase
               .from('inventory_items')
@@ -442,7 +442,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
     const day = parseInt(parts[2], 10);
     const d = new Date(year, month, day);
     d.setDate(d.getDate() + days);
-    
+
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
@@ -500,7 +500,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           }]);
 
         if (signErr) throw signErr;
-        
+
         // Refresh data to update isSigned state
         await fetchData(false);
       } catch (err: any) {
@@ -702,11 +702,11 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   const handleSaveReport = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    
+
     const parsedCash = Number(cashAtHand) || 0;
     const parsedPos = Number(posTransfer) || 0;
     const parsedNotPaid = Number(notPaid) || 0;
-    
+
     const totalSales = parsedCash + parsedPos + parsedNotPaid;
 
     // Automatically gather drinks/items added to stock book today
@@ -747,7 +747,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   const handleSavePosBreakdown = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    
+
     try {
       const payload = {
         date: selectedDate,
@@ -805,10 +805,10 @@ export default function Inventory({ department: propDepartment }: InventoryProps
 
       // 2. Add to stockbook as an addition
       // check if it exists in stockbook today
-      if (existingItem) {
-        const newBorrowed = existingItem.borrowed + parsedQty;
-        const newTotal = existingItem.opening + existingItem.addition + newBorrowed;
-        const newClosing = newTotal - existingItem.sold - existingItem.waste;
+      if (editingItem) {
+        const newBorrowed = editingItem.borrowed + parsedQty;
+        const newTotal = editingItem.opening + editingItem.addition + newBorrowed;
+        const newClosing = newTotal - editingItem.sold - editingItem.waste;
         const { error: updateErr } = await supabase
           .from('inventory_items')
           .update({
@@ -816,14 +816,14 @@ export default function Inventory({ department: propDepartment }: InventoryProps
             total: newTotal,
             closing: newClosing
           })
-          .eq('id', existingItem.id);
+          .eq('id', editingItem.id);
         if (updateErr) throw updateErr;
       } else {
         // Find previous day closing if any
         const prevItem = previousDayItems.find(p => p.name.toLowerCase() === normalizedName.toLowerCase());
         const openingStock = prevItem ? prevItem.closing : 0;
         const unitPriceVal = prevItem ? prevItem.unitPrice : 0;
-        
+
         const { error: insertErr } = await supabase
           .from('inventory_items')
           .insert([{
@@ -968,7 +968,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                 Sign & Close Day
               </button>
             )}
-            
+
             {isEditable ? (
               <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-800 rounded-full border border-green-200">
                 {isToday ? 'Today' : selectedDate} • Editable
@@ -987,33 +987,30 @@ export default function Inventory({ department: propDepartment }: InventoryProps
         <nav className="-mb-px flex gap-6">
           <button
             onClick={() => setActiveTab('stockbook')}
-            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
-              activeTab === 'stockbook'
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${activeTab === 'stockbook'
                 ? 'border-green-500 text-green-600'
                 : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
-            }`}
+              }`}
           >
             <Package className="w-4 h-4" />
             Daily Stockbook
           </button>
           <button
             onClick={() => setActiveTab('sales_report')}
-            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
-              activeTab === 'sales_report'
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${activeTab === 'sales_report'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
-            }`}
+              }`}
           >
             <FileText className="w-4 h-4" />
             Sales Reports
           </button>
           <button
             onClick={() => setActiveTab('pos_breakdown')}
-            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
-              activeTab === 'pos_breakdown'
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${activeTab === 'pos_breakdown'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
-            }`}
+              }`}
           >
             <FileText className="w-4 h-4" />
             POS Breakdown
@@ -1021,11 +1018,10 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           {department === 'bar' && (
             <button
               onClick={() => setActiveTab('borrowed_items')}
-              className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
-                activeTab === 'borrowed_items'
+              className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${activeTab === 'borrowed_items'
                   ? 'border-orange-500 text-orange-600'
                   : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
-              }`}
+                }`}
             >
               <Package className="w-4 h-4" />
               Borrowed Items
@@ -1077,39 +1073,40 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                   <tbody className="divide-y divide-neutral-200">
                     {inventory.map((item) => {
                       return (
-                      <tr key={item.id} className="hover:bg-neutral-50 transition-colors">
-                        <td className="px-6 py-4 text-sm font-semibold text-neutral-900">{item.name}</td>
-                        <td className="px-6 py-4 text-sm text-neutral-600 text-right font-medium">{item.opening}</td>
-                        <td className="px-6 py-4 text-sm text-green-600 text-right font-semibold">+{item.addition}</td>
-                        <td className="px-6 py-4 text-sm text-orange-600 text-right font-semibold">+{item.borrowed || 0}</td>
-                        <td className="px-6 py-4 text-sm text-neutral-900 text-right font-bold">{item.total}</td>
-                        <td className="px-6 py-4 text-sm text-neutral-600 text-right font-medium">₦ {item.unitPrice.toLocaleString()}</td>
-                        <td className="px-6 py-4 text-sm text-red-600 text-right font-semibold">-{item.sold}</td>
-                        <td className="px-6 py-4 text-sm text-orange-600 text-right font-semibold">-{item.waste}</td>
-                        <td className="px-6 py-4 text-sm font-bold text-neutral-900 text-right bg-neutral-50">{item.closing}</td>
-                        <td className="px-6 py-4 text-sm font-bold text-purple-700 text-right bg-purple-50">
-                          ₦ {(item.sold * item.unitPrice).toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-center gap-2">
-                            {isEditable ? (
-                              <>
-                                <button onClick={() => handleOpenEdit(item)}
-                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Item">
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
-                                <button onClick={() => handleDeleteItem(item.id)}
-                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Item">
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </>
-                            ) : (
-                              <span className="text-xs text-neutral-400 italic">locked</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )})}
+                        <tr key={item.id} className="hover:bg-neutral-50 transition-colors">
+                          <td className="px-6 py-4 text-sm font-semibold text-neutral-900">{item.name}</td>
+                          <td className="px-6 py-4 text-sm text-neutral-600 text-right font-medium">{item.opening}</td>
+                          <td className="px-6 py-4 text-sm text-green-600 text-right font-semibold">+{item.addition}</td>
+                          <td className="px-6 py-4 text-sm text-orange-600 text-right font-semibold">+{item.borrowed || 0}</td>
+                          <td className="px-6 py-4 text-sm text-neutral-900 text-right font-bold">{item.total}</td>
+                          <td className="px-6 py-4 text-sm text-neutral-600 text-right font-medium">₦ {item.unitPrice.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-red-600 text-right font-semibold">-{item.sold}</td>
+                          <td className="px-6 py-4 text-sm text-orange-600 text-right font-semibold">-{item.waste}</td>
+                          <td className="px-6 py-4 text-sm font-bold text-neutral-900 text-right bg-neutral-50">{item.closing}</td>
+                          <td className="px-6 py-4 text-sm font-bold text-purple-700 text-right bg-purple-50">
+                            ₦ {(item.sold * item.unitPrice).toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center justify-center gap-2">
+                              {isEditable ? (
+                                <>
+                                  <button onClick={() => handleOpenEdit(item)}
+                                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Item">
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+                                  <button onClick={() => handleDeleteItem(item.id)}
+                                    className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Item">
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="text-xs text-neutral-400 italic">locked</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
                     {inventory.length === 0 && (
                       <tr>
                         <td colSpan={11} className="px-6 py-10 text-center text-sm text-neutral-500">
@@ -1321,7 +1318,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
             <form onSubmit={handleSaveItem} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-neutral-700 mb-1">Item Name</label>
-                <input type="text" required value={name} 
+                <input type="text" required value={name}
                   onChange={(e) => {
                     const newName = e.target.value;
                     setName(newName);
@@ -1368,11 +1365,10 @@ export default function Inventory({ department: propDepartment }: InventoryProps
 
               {/* Store stock indicator (bar only) */}
               {department === 'bar' && name && (
-                <div className={`p-3 rounded-lg border text-sm font-medium ${
-                  getStoreStock(name) > 0 
-                    ? 'bg-blue-50 border-blue-200 text-blue-800' 
+                <div className={`p-3 rounded-lg border text-sm font-medium ${getStoreStock(name) > 0
+                    ? 'bg-blue-50 border-blue-200 text-blue-800'
                     : 'bg-orange-50 border-orange-200 text-orange-800'
-                }`}>
+                  }`}>
                   <span>Store stock for "{name}":</span>
                   <span className="ml-2 font-bold">{getStoreStock(name)} units available</span>
                   {(() => {
@@ -1447,14 +1443,14 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                   className="w-full px-4 py-2 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-500 cursor-not-allowed focus:outline-none" />
                 <p className="text-xs text-neutral-500 mt-1">Locked to the active stockbook date ({selectedDate}) to ensure calculations match.</p>
               </div>
-              
+
               <div className="grid grid-cols-1 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 mb-1">Cash at Hand (₦)</label>
                   <input type="number" min="0" required value={cashAtHand} onChange={(e) => setCashAtHand(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 mb-1">POS / Transfer (₦)</label>
                   <input type="number" min="0" required value={posTransfer} onChange={(e) => setPosTransfer(e.target.value === '' ? '' : Number(e.target.value))}
@@ -1484,9 +1480,8 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                 const diff = received - calcStockbookSales;
                 const isMatch = Math.abs(diff) < 1;
                 return (
-                  <div className={`p-3.5 rounded-lg border flex items-center justify-between text-sm font-medium ${
-                    isMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                  }`}>
+                  <div className={`p-3.5 rounded-lg border flex items-center justify-between text-sm font-medium ${isMatch ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                    }`}>
                     <span className={isMatch ? 'text-green-800' : 'text-red-800'}>
                       {isMatch ? '✓ Cash + POS + Debt matches stockbook' : 'Cash + POS + Debt total:'}
                     </span>
@@ -1548,7 +1543,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                 <input type="date" required disabled value={selectedDate}
                   className="w-full px-4 py-2 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-500 cursor-not-allowed focus:outline-none" />
               </div>
-              
+
               <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
                   <div>
@@ -1613,7 +1608,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                   ))}
                 </datalist>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-semibold text-neutral-700 mb-1">Quantity</label>
                 <input type="number" min="1" required value={borrowQuantity} onChange={(e) => setBorrowQuantity(e.target.value === '' ? '' : Number(e.target.value))}
