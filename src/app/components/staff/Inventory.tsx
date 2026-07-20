@@ -318,6 +318,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
         name: item.name,
         opening: Number(item.opening),
         addition: Number(item.addition),
+        borrowed: Number(item.borrowed || 0),
         total: Number(item.total),
         unitPrice: Number(item.unit_price),
         sold: Number(item.sold),
@@ -1111,7 +1112,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                     )})}
                     {inventory.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="px-6 py-10 text-center text-sm text-neutral-500">
+                        <td colSpan={11} className="px-6 py-10 text-center text-sm text-neutral-500">
                           No items in {department} inventory. Click "Add Item" to add stock.
                         </td>
                       </tr>
@@ -1120,7 +1121,7 @@ export default function Inventory({ department: propDepartment }: InventoryProps
                   {inventory.length > 0 && (
                     <tfoot className="border-t-2 border-purple-300 bg-purple-50">
                       <tr>
-                        <td className="px-6 py-4 text-sm font-bold text-neutral-900" colSpan={8}>Total Sales from Stockbook</td>
+                        <td className="px-6 py-4 text-sm font-bold text-neutral-900" colSpan={9}>Total Sales from Stockbook</td>
                         <td className="px-6 py-4 text-base font-extrabold text-purple-800 text-right">
                           ₦ {calcStockbookSales.toLocaleString()}
                         </td>
