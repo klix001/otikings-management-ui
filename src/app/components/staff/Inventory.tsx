@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Loader2, AlertCircle, Package, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Edit2, Trash2, Loader2, AlertCircle, Package, FileText, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
 import { useLocation } from 'react-router';
 import { supabase } from '../../lib/supabase';
 
@@ -96,6 +96,9 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
 
   // Track whether the selected day's stockbook has been signed/closed
   const [isSigned, setIsSigned] = useState(false);
+
+  // Permanent display order
+  const [sortOrders, setSortOrders] = useState<Record<string, number>>({});
 
   // A day's stockbook is editable only if it hasn't been signed
   // Super admins can override signed/locked days to correct mistakes
@@ -310,7 +313,21 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
         }
       }
 
-      setInventory((invData || []).map((item: any) => ({
+      // Fetch sort orders for permanent positioning
+      const { data: sortData, error: sortErr } = await supabase
+        .from('item_sort_orders')
+        .select('item_name, sort_order')
+        .eq('department', department);
+      
+      const ordersMap: Record<string, number> = {};
+      if (sortData) {
+        sortData.forEach((s: any) => {
+          ordersMap[s.item_name.toLowerCase()] = Number(s.sort_order);
+        });
+      }
+      setSortOrders(ordersMap);
+
+      const mappedInventory = (invData || []).map((item: any) => ({
         id: Number(item.id),
         name: item.name,
         opening: Number(item.opening),
@@ -320,7 +337,17 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
         sold: Number(item.sold),
         waste: Number(item.waste),
         closing: Number(item.closing),
-      })));
+      }));
+
+      // Sort based on permanent sort_order mapping, default to alphabetical
+      mappedInventory.sort((a, b) => {
+        const orderA = ordersMap[a.name.toLowerCase()] ?? 999999;
+        const orderB = ordersMap[b.name.toLowerCase()] ?? 999999;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.name.localeCompare(b.name);
+      });
+
+      setInventory(mappedInventory);
 
       // 2. Fetch store inventory (bar only — kitchen has no store)
       if (department === 'bar') {
@@ -697,10 +724,53 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
 
       await fetchData(false, true);
     } catch (err: any) {
-      console.error('Error deleting inventory:', err);
-      alert(err.message || 'Error deleting inventory item.');
+      console.error('Error saving inventory:', err);
+      alert(err.message || 'Error saving inventory item.');
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  const handleMoveItem = async (index: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === inventory.length - 1) return;
+
+    const newInventory = [...inventory];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    
+    // Swap
+    const temp = newInventory[index];
+    newInventory[index] = newInventory[targetIndex];
+    newInventory[targetIndex] = temp;
+    
+    setInventory(newInventory);
+
+    // Prepare upsert payload
+    const upserts = newInventory.map((item, idx) => ({
+      department,
+      item_name: item.name,
+      sort_order: idx
+    }));
+
+    // Update local state map
+    const newSortOrders = { ...sortOrders };
+    upserts.forEach(u => {
+      newSortOrders[u.item_name.toLowerCase()] = u.sort_order;
+    });
+    setSortOrders(newSortOrders);
+
+    try {
+      const { error: upsertErr } = await supabase
+        .from('item_sort_orders')
+        .upsert(upserts, { onConflict: 'department, item_name' });
+        
+      if (upsertErr) throw upsertErr;
+    } catch (err: any) {
+      console.error('Error updating sort orders:', err);
+      // Fail silently for better UX, but it's logged
+    }
+  };
+
 
   // ─── Sales Report Logic ────────────────────────────────────────────
   // Auto-calculate total sales from stockbook: sold × unitPrice per item
@@ -1090,6 +1160,26 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
+                            {isSuperAdmin && (
+                              <div className="flex flex-col gap-1 mr-2 bg-neutral-100 p-1 rounded-lg">
+                                <button
+                                  onClick={() => handleMoveItem(inventory.indexOf(item), 'up')}
+                                  disabled={inventory.indexOf(item) === 0}
+                                  className="p-1 text-neutral-500 hover:text-neutral-900 disabled:opacity-30 disabled:hover:text-neutral-500 transition-colors"
+                                  title="Move Up"
+                                >
+                                  <ArrowUp className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleMoveItem(inventory.indexOf(item), 'down')}
+                                  disabled={inventory.indexOf(item) === inventory.length - 1}
+                                  className="p-1 text-neutral-500 hover:text-neutral-900 disabled:opacity-30 disabled:hover:text-neutral-500 transition-colors"
+                                  title="Move Down"
+                                >
+                                  <ArrowDown className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
                             {isEditable ? (
                               <>
                                 <button onClick={() => handleOpenEdit(item)}
