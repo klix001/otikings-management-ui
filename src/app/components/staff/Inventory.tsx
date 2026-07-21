@@ -432,6 +432,51 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
     }
   };
 
+  const handleForceSync = async () => {
+    if (!previousDayItems || previousDayItems.length === 0) {
+      alert("No items from the previous day to sync.");
+      return;
+    }
+    
+    if (!confirm("This will pull any missing items from the previous day into today. Are you sure?")) {
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const missingInserts = previousDayItems
+        .filter(prev => !inventory.find(curr => curr.name.toLowerCase() === prev.name.toLowerCase()))
+        .map(prev => ({
+          name: prev.name,
+          date: selectedDate,
+          opening: prev.closing,
+          addition: 0,
+          total: prev.closing,
+          unit_price: prev.unitPrice,
+          sold: 0,
+          waste: 0,
+          closing: prev.closing,
+          department
+        }));
+
+      if (missingInserts.length === 0) {
+        alert("All items from the previous day are already present today.");
+        setLoading(false);
+        return;
+      }
+
+      const { error } = await supabase.from('inventory_items').insert(missingInserts);
+      if (error) throw error;
+      
+      await fetchData();
+      alert(`Successfully synced ${missingInserts.length} missing items!`);
+    } catch (err: any) {
+      console.error("Force sync error:", err);
+      alert("Error syncing items: " + err.message);
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, [department, selectedDate]);
@@ -1027,6 +1072,16 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
             </button>
           )}
           <div className="ml-auto flex items-center gap-2">
+            {isSuperAdmin && (
+              <button
+                onClick={handleForceSync}
+                className="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-xs font-semibold hover:bg-purple-200 border border-purple-200 transition-colors shadow-sm flex items-center gap-1.5"
+                title="Pull missing items from previous day"
+              >
+                <Package className="w-3.5 h-3.5" />
+                Force Sync Missing
+              </button>
+            )}
             {!isSigned && (
               <button
                 onClick={handleSignRecord}
