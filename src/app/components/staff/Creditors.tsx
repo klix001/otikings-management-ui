@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, CheckCircle, Loader2, AlertCircle, Phone } from 'lucide-react';
+import { Plus, CheckCircle, Loader2, AlertCircle, Phone, Edit2 } from 'lucide-react';
 import { useLocation } from 'react-router';
 import { supabase } from '../../lib/supabase';
 
@@ -26,7 +26,8 @@ export default function Creditors({ department: propDepartment }: CreditorsProps
   const [creditors, setCreditors] = useState<Creditor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [editingCreditor, setEditingCreditor] = useState<Creditor | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Form fields
@@ -82,8 +83,24 @@ export default function Creditors({ department: propDepartment }: CreditorsProps
     fetchCreditors();
   }, [department]);
 
-  // ─── Add Creditor ──────────────────────────────────────────────────
-  const handleAddCreditor = async (e: React.FormEvent) => {
+  // ─── Add / Edit Creditor ──────────────────────────────────────────
+  const handleOpenAdd = () => {
+    resetForm();
+    setEditingCreditor(null);
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (creditor: Creditor) => {
+    setFormName(creditor.name);
+    setFormAmount(creditor.amount);
+    setFormReason(creditor.reason);
+    setFormItemBought(creditor.itemBought);
+    setFormPhoneNumber(creditor.phoneNumber);
+    setEditingCreditor(creditor);
+    setShowModal(true);
+  };
+
+  const handleSaveCreditor = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsedAmount = Number(formAmount) || 0;
 
@@ -94,27 +111,43 @@ export default function Creditors({ department: propDepartment }: CreditorsProps
 
     setSubmitting(true);
     try {
-      const { error: insertErr } = await supabase
-        .from('creditors')
-        .insert([{
-          name: formName,
-          amount: parsedAmount,
-          reason: formReason || null,
-          item_bought: formItemBought || null,
-          phone_number: formPhoneNumber || null,
-          status: 'UNPAID',
-          date: new Date().toISOString().split('T')[0],
-          department,
-        }]);
+      if (editingCreditor) {
+        const { error: updateErr } = await supabase
+          .from('creditors')
+          .update({
+            name: formName,
+            amount: parsedAmount,
+            reason: formReason || null,
+            item_bought: formItemBought || null,
+            phone_number: formPhoneNumber || null,
+          })
+          .eq('id', editingCreditor.id);
 
-      if (insertErr) throw insertErr;
+        if (updateErr) throw updateErr;
+      } else {
+        const { error: insertErr } = await supabase
+          .from('creditors')
+          .insert([{
+            name: formName,
+            amount: parsedAmount,
+            reason: formReason || null,
+            item_bought: formItemBought || null,
+            phone_number: formPhoneNumber || null,
+            status: 'UNPAID',
+            date: new Date().toISOString().split('T')[0],
+            department,
+          }]);
 
-      setShowAddModal(false);
+        if (insertErr) throw insertErr;
+      }
+
+      setShowModal(false);
       resetForm();
+      setEditingCreditor(null);
       await fetchCreditors();
     } catch (err: any) {
-      console.error('Error adding creditor:', err);
-      alert(err.message || 'Failed to add creditor.');
+      console.error('Error saving creditor:', err);
+      alert(err.message || 'Failed to save creditor.');
     } finally {
       setSubmitting(false);
     }
@@ -159,7 +192,7 @@ export default function Creditors({ department: propDepartment }: CreditorsProps
           <p className="text-neutral-600">Track credit transactions and payments</p>
         </div>
         <button
-          onClick={() => { resetForm(); setShowAddModal(true); }}
+          onClick={handleOpenAdd}
           className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm"
         >
           <Plus className="w-5 h-5" />
@@ -260,14 +293,23 @@ export default function Creditors({ department: propDepartment }: CreditorsProps
                       )}
                     </td>
                     <td className="px-6 py-4 text-center">
-                      {creditor.status === 'UNPAID' && (
+                      <div className="flex items-center justify-center gap-2">
+                        {creditor.status === 'UNPAID' && (
+                          <button
+                            onClick={() => handleMarkPaid(creditor.id)}
+                            className="px-3 py-1 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium whitespace-nowrap"
+                          >
+                            Mark Paid
+                          </button>
+                        )}
                         <button
-                          onClick={() => handleMarkPaid(creditor.id)}
-                          className="px-3 py-1 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium"
+                          onClick={() => handleOpenEdit(creditor)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Edit Creditor"
                         >
-                          Mark Paid
+                          <Edit2 className="w-4 h-4" />
                         </button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -284,12 +326,14 @@ export default function Creditors({ department: propDepartment }: CreditorsProps
         </div>
       )}
 
-      {/* Add Modal */}
-      {showAddModal && (
+      {/* Add / Edit Modal */}
+      {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 max-h-[95vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold text-neutral-900 mb-4">Add Creditor</h2>
-            <form onSubmit={handleAddCreditor} className="space-y-4">
+            <h2 className="text-2xl font-bold text-neutral-900 mb-4">
+              {editingCreditor ? 'Edit Creditor' : 'Add Creditor'}
+            </h2>
+            <form onSubmit={handleSaveCreditor} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-neutral-700 mb-1">Name</label>
                 <input
@@ -338,7 +382,7 @@ export default function Creditors({ department: propDepartment }: CreditorsProps
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => setShowModal(false)}
                   className="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors"
                 >
                   Cancel
@@ -349,7 +393,7 @@ export default function Creditors({ department: propDepartment }: CreditorsProps
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-75"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Add Creditor
+                  {editingCreditor ? 'Save Changes' : 'Add Creditor'}
                 </button>
               </div>
             </form>
