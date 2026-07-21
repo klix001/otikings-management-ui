@@ -21,6 +21,7 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
   const [loading, setLoading] = useState(true);
   
   const [rawRevenue, setRawRevenue] = useState<{date: string, amount: number}[]>([]);
+  const [rawCashAtHand, setRawCashAtHand] = useState<{date: string, amount: number}[]>([]);
   const [rawExpenses, setRawExpenses] = useState<{date: string, category: string, amount: number}[]>([]);
 
   useEffect(() => {
@@ -30,10 +31,11 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
         const [invRes, expRes, salesRes] = await Promise.all([
           supabase.from('inventory_items').select('date, sold, unit_price').eq('department', 'bar'),
           supabase.from('expenses').select('date, category, amount').eq('department', 'bar'),
-          supabase.from('sales_reports').select('date, total_sales').eq('department', 'bar'),
+          supabase.from('sales_reports').select('date, total_sales, cash_at_hand').eq('department', 'bar'),
         ]);
 
         const revMap: Record<string, number> = {};
+        const cashMap: Record<string, number> = {};
         
         // 1. Calculate from real-time inventory
         (invRes.data || []).forEach(item => {
@@ -46,9 +48,13 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
           if (report.total_sales !== null && report.total_sales !== undefined) {
             revMap[report.date] = Number(report.total_sales);
           }
+          if (report.cash_at_hand !== null && report.cash_at_hand !== undefined) {
+            cashMap[report.date] = Number(report.cash_at_hand);
+          }
         });
         
         setRawRevenue(Object.entries(revMap).map(([date, amount]) => ({ date, amount })));
+        setRawCashAtHand(Object.entries(cashMap).map(([date, amount]) => ({ date, amount })));
         setRawExpenses((expRes.data || []).map(e => ({
           date: e.date,
           category: e.category,
@@ -63,7 +69,7 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
     fetchData();
   }, []);
 
-  const { filteredRevenue, filteredExpenses, totalRevenue, totalExpenses, netProfit, profitMargin, revenueData, categoryExpenses, profitTrends } = useMemo(() => {
+  const { filteredRevenue, filteredExpenses, totalRevenue, totalExpenses, totalCashAtHand, netProfit, profitMargin, revenueData, categoryExpenses, profitTrends } = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const end = new Date(today);
@@ -85,9 +91,15 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
       const d = new Date(e.date + 'T00:00:00');
       return d >= start && d < end;
     });
+    
+    const fCash = rawCashAtHand.filter(c => {
+      const d = new Date(c.date + 'T00:00:00');
+      return d >= start && d < end;
+    });
 
     const totRev = fRev.reduce((s, r) => s + r.amount, 0);
     const totExp = fExp.reduce((s, e) => s + e.amount, 0);
+    const totCash = fCash.reduce((s, c) => s + c.amount, 0);
     const net = totRev - totExp;
     const margin = totRev > 0 ? ((net / totRev) * 100).toFixed(1) : '0.0';
 
@@ -140,13 +152,14 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
       filteredExpenses: fExp,
       totalRevenue: totRev,
       totalExpenses: totExp,
+      totalCashAtHand: totCash,
       netProfit: net,
       profitMargin: margin,
       revenueData: revData,
       categoryExpenses: catExp,
       profitTrends: profTrends
     };
-  }, [rawRevenue, rawExpenses, dateRange]);
+  }, [rawRevenue, rawExpenses, rawCashAtHand, dateRange]);
 
   if (loading) {
     return (
@@ -191,7 +204,7 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
           <p className="text-sm text-neutral-600 mb-1">Total Revenue</p>
           <p className="text-2xl font-bold text-green-600">₦ {totalRevenue.toLocaleString()}</p>
@@ -199,6 +212,10 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
         <div className="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
           <p className="text-sm text-neutral-600 mb-1">Total Expenses</p>
           <p className="text-2xl font-bold text-red-600">₦ {totalExpenses.toLocaleString()}</p>
+        </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
+          <p className="text-sm text-neutral-600 mb-1">Total Cash at Hand</p>
+          <p className="text-2xl font-bold text-purple-600">₦ {totalCashAtHand.toLocaleString()}</p>
         </div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
           <p className="text-sm text-neutral-600 mb-1">Net Profit</p>

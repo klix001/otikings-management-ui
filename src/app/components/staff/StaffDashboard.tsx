@@ -72,13 +72,6 @@ const quickActions = [
   },
 ];
 
-const statsCards = [
-  { label: 'Today\'s Sales', value: '₦ 0', icon: TrendingUp, color: 'text-green-600' },
-  { label: 'Items in Stock', value: '0', icon: Package, color: 'text-blue-600' },
-  { label: 'Pending Creditors', value: '0', icon: Users, color: 'text-orange-600' },
-  { label: 'Cash at Hand', value: '₦ 0', icon: DollarSign, color: 'text-purple-600' },
-];
-
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useLocation } from 'react-router';
@@ -89,6 +82,13 @@ export default function StaffDashboard() {
   const department = location.pathname.includes('kitchen') ? 'kitchen' : 'bar';
   
   const [recentNotes, setRecentNotes] = useState<any[]>([]);
+
+  const [stats, setStats] = useState({
+    todaySales: 0,
+    itemsInStock: 0,
+    pendingCreditors: 0,
+    cashAtHand: 0,
+  });
 
   useEffect(() => {
     const fetchRecentNotes = async () => {
@@ -107,9 +107,55 @@ export default function StaffDashboard() {
         console.error('Error fetching recent notes:', err);
       }
     };
+
+    const fetchStats = async () => {
+      const today = new Date().toISOString().split('T')[0];
+      try {
+        const [invRes, credRes, salesRes] = await Promise.all([
+          supabase.from('inventory_items').select('closing, sold, unit_price').eq('department', department).eq('date', today),
+          supabase.from('creditors').select('id', { count: 'exact' }).eq('department', department).eq('status', 'UNPAID'),
+          supabase.from('sales_reports').select('cash_at_hand').eq('department', department)
+        ]);
+
+        let todaySales = 0;
+        let itemsInStock = 0;
+        if (invRes.data) {
+          invRes.data.forEach(item => {
+            todaySales += (Number(item.sold) || 0) * (Number(item.unit_price) || 0);
+            itemsInStock += (Number(item.closing) || 0);
+          });
+        }
+
+        const pendingCreditors = credRes.count || 0;
+        
+        let cashAtHand = 0;
+        if (salesRes.data) {
+          salesRes.data.forEach(report => {
+            cashAtHand += (Number(report.cash_at_hand) || 0);
+          });
+        }
+
+        setStats({
+          todaySales,
+          itemsInStock, // Total physical items in stock
+          pendingCreditors,
+          cashAtHand
+        });
+      } catch (err) {
+        console.error('Error fetching dashboard stats:', err);
+      }
+    };
     
     fetchRecentNotes();
+    fetchStats();
   }, [department]);
+
+  const dynamicStatsCards = [
+    { label: 'Today\'s Sales', value: `₦ ${stats.todaySales.toLocaleString()}`, icon: TrendingUp, color: 'text-green-600' },
+    { label: 'Items in Stock', value: stats.itemsInStock.toLocaleString(), icon: Package, color: 'text-blue-600' },
+    { label: 'Pending Creditors', value: stats.pendingCreditors.toString(), icon: Users, color: 'text-orange-600' },
+    { label: 'Total Cash at Hand', value: `₦ ${stats.cashAtHand.toLocaleString()}`, icon: DollarSign, color: 'text-purple-600' },
+  ];
 
   return (
     <div className="max-w-7xl">
@@ -120,7 +166,7 @@ export default function StaffDashboard() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {statsCards.map((stat) => (
+        {dynamicStatsCards.map((stat) => (
           <div key={stat.label} className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-neutral-200">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-neutral-600">{stat.label}</span>
