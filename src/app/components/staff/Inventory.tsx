@@ -241,7 +241,6 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
           // Sync fix: correct openings if previous day's closings have changed since the seed
           // AND add any missing items that were added to the previous day after this day was seeded
           const updates: Promise<any>[] = [];
-          const missingInserts: any[] = [];
 
           for (const prevItem of latestItems) {
             const currentItem = invData!.find(
@@ -277,38 +276,14 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
                 currentItem.total = newTotal;
                 currentItem.closing = newClosing;
               }
-            } else if (!skipCarryForward) {
-              // Item exists in previous day but is missing today. Carry it forward!
-              // (Skipped when refreshing after a deliberate delete)
-              missingInserts.push({
-                name: prevItem.name,
-                date: selectedDate,
-                opening: Number(prevItem.closing),
-                addition: 0,
-                total: Number(prevItem.closing),
-                unit_price: Number(prevItem.unit_price),
-                sold: 0,
-                waste: 0,
-                closing: Number(prevItem.closing),
-                department,
-              });
+              // We no longer aggressively carry forward missing items here.
+              // If a user deletes an item today, it should stay deleted and not magically reappear on refresh.
+              // New days are still fully seeded in the block above (if invData.length === 0).
             }
           }
 
           if (updates.length > 0) {
             await Promise.all(updates);
-          }
-
-          if (missingInserts.length > 0) {
-            const { data: insertedMissing, error: missingErr } = await supabase
-              .from('inventory_items')
-              .insert(missingInserts)
-              .select();
-            if (missingErr) {
-              console.error('Error inserting missing items:', missingErr);
-            } else if (insertedMissing) {
-              invData = [...invData!, ...insertedMissing];
-            }
           }
         }
       }
