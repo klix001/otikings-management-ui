@@ -731,18 +731,23 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
     }
   };
 
-  const handleMoveItem = async (index: number, direction: 'up' | 'down') => {
-    if (direction === 'up' && index === 0) return;
-    if (direction === 'down' && index === inventory.length - 1) return;
+  const handleSetPosition = async (currentIndex: number) => {
+    const userInput = window.prompt(`Enter new position for ${inventory[currentIndex].name} (1 - ${inventory.length}):`, String(currentIndex + 1));
+    if (!userInput) return;
+    
+    const newPos = parseInt(userInput, 10);
+    if (isNaN(newPos) || newPos < 1 || newPos > inventory.length) {
+      alert(`Invalid position. Please enter a number between 1 and ${inventory.length}.`);
+      return;
+    }
+
+    const targetIndex = newPos - 1;
+    if (targetIndex === currentIndex) return;
 
     const newInventory = [...inventory];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    
-    // Swap
-    const temp = newInventory[index];
-    newInventory[index] = newInventory[targetIndex];
-    newInventory[targetIndex] = temp;
-    
+    const [movedItem] = newInventory.splice(currentIndex, 1);
+    newInventory.splice(targetIndex, 0, movedItem);
+
     setInventory(newInventory);
 
     // Prepare upsert payload
@@ -767,7 +772,6 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
       if (upsertErr) throw upsertErr;
     } catch (err: any) {
       console.error('Error updating sort orders:', err);
-      // Fail silently for better UX, but it's logged
     }
   };
 
@@ -1161,22 +1165,13 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-2">
                             {isSuperAdmin && (
-                              <div className="flex flex-col gap-1 mr-2 bg-neutral-100 p-1 rounded-lg">
+                              <div className="mr-2">
                                 <button
-                                  onClick={() => handleMoveItem(inventory.indexOf(item), 'up')}
-                                  disabled={inventory.indexOf(item) === 0}
-                                  className="p-1 text-neutral-500 hover:text-neutral-900 disabled:opacity-30 disabled:hover:text-neutral-500 transition-colors"
-                                  title="Move Up"
+                                  onClick={() => handleSetPosition(inventory.indexOf(item))}
+                                  className="px-2 py-1.5 bg-neutral-100 border border-neutral-200 rounded-md text-xs font-semibold text-neutral-600 hover:bg-neutral-200 transition-colors whitespace-nowrap"
+                                  title="Change Position"
                                 >
-                                  <ArrowUp className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleMoveItem(inventory.indexOf(item), 'down')}
-                                  disabled={inventory.indexOf(item) === inventory.length - 1}
-                                  className="p-1 text-neutral-500 hover:text-neutral-900 disabled:opacity-30 disabled:hover:text-neutral-500 transition-colors"
-                                  title="Move Down"
-                                >
-                                  <ArrowDown className="w-4 h-4" />
+                                  Pos: {inventory.indexOf(item) + 1}
                                 </button>
                               </div>
                             )}
