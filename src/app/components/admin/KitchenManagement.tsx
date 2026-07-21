@@ -1,13 +1,37 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import KitchenAnalytics from './KitchenAnalytics';
 import Inventory from '../staff/Inventory';
 
 import Expenses from '../staff/Expenses';
+import { supabase } from '../../lib/supabase';
 
 type Tab = 'overview' | 'inventory' | 'expenses';
 
 export default function KitchenManagement() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
+  // Fetch current user's role to determine super admin status
+  useEffect(() => {
+    const fetchRole = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+          if (profile) {
+            setIsSuperAdmin(['super_admin', 'superadmin'].includes(profile.role));
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching user role:', err);
+      }
+    };
+    fetchRole();
+  }, []);
 
   return (
     <div className="max-w-7xl">
@@ -54,7 +78,7 @@ export default function KitchenManagement() {
 
       <div className="mt-4">
         {activeTab === 'overview' && <KitchenAnalytics hideHeader />}
-        {activeTab === 'inventory' && <Inventory />}
+        {activeTab === 'inventory' && <Inventory isSuperAdmin={isSuperAdmin} />}
         {activeTab === 'expenses' && <Expenses />}
       </div>
     </div>

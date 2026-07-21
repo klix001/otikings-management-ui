@@ -47,6 +47,7 @@ interface PosBreakdown {
 
 interface InventoryProps {
   department?: 'bar' | 'kitchen';
+  isSuperAdmin?: boolean;
 }
 
 type Tab = 'stockbook' | 'sales_report' | 'pos_breakdown' | 'borrowed_items';
@@ -62,7 +63,7 @@ interface BorrowedItem {
 }
 
 // ─── Component ──────────────────────────────────────────────────────
-export default function Inventory({ department: propDepartment }: InventoryProps) {
+export default function Inventory({ department: propDepartment, isSuperAdmin = false }: InventoryProps) {
   const location = useLocation();
   const department = propDepartment || (location.pathname.includes('kitchen') ? 'kitchen' : 'bar');
 
@@ -97,7 +98,9 @@ export default function Inventory({ department: propDepartment }: InventoryProps
   const [isSigned, setIsSigned] = useState(false);
 
   // A day's stockbook is editable only if it hasn't been signed
-  const isEditable = !isSigned;
+  // Super admins can override signed/locked days to correct mistakes
+  const isEditable = !isSigned || isSuperAdmin;
+  const isSuperAdminOverride = isSigned && isSuperAdmin;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -896,6 +899,12 @@ export default function Inventory({ department: propDepartment }: InventoryProps
           <span className="flex items-center gap-2 px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg text-sm font-semibold border border-amber-300">
             Read Only
           </span>
+        ) : activeTab === 'stockbook' && isSuperAdminOverride ? (
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-800 rounded-lg text-sm font-semibold border border-purple-300">
+              ⚡ Super Admin Override
+            </span>
+          </div>
         ) : activeTab === 'pos_breakdown' ? (
           <button
             onClick={() => { resetPosForm(selectedDate); setShowPosModal(true); }}
@@ -958,7 +967,11 @@ export default function Inventory({ department: propDepartment }: InventoryProps
               </button>
             )}
 
-            {isEditable ? (
+            {isSuperAdminOverride ? (
+              <span className="text-xs font-semibold px-2 py-1 bg-purple-100 text-purple-800 rounded-full border border-purple-200">
+                Signed • Super Admin Override
+              </span>
+            ) : isEditable ? (
               <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-800 rounded-full border border-green-200">
                 {isToday ? 'Today' : selectedDate} • Editable
               </span>
