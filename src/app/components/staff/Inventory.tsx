@@ -246,34 +246,8 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
             );
 
             if (currentItem) {
-              const prevClosing = Number(prevItem.closing);
-              const currentOpening = Number(currentItem.opening);
-              if (Math.abs(prevClosing - currentOpening) > 0.0001) {
-                const newOpening = prevClosing;
-                const newAddition = Number(currentItem.addition);
-                const newTotal = newOpening + newAddition;
-                const newSold = Number(currentItem.sold);
-                const newWaste = Number(currentItem.waste);
-                const newClosing = newTotal - newSold - newWaste;
-
-                updates.push(
-                  (async () => {
-                    const { error } = await supabase
-                      .from('inventory_items')
-                      .update({
-                        opening: newOpening,
-                        total: newTotal,
-                        closing: newClosing,
-                      })
-                      .eq('id', currentItem.id);
-                    if (error) console.error(`Sync error for ${currentItem.name}:`, error);
-                  })()
-                );
-                // Update the local object so the UI reflects the fix immediately
-                currentItem.opening = newOpening;
-                currentItem.total = newTotal;
-                currentItem.closing = newClosing;
-              }
+              // We intentionally do not auto-sync currentOpening to prevClosing here anymore,
+              // because doing so instantly overwrites any manual corrections users make to today's opening stock.
             } else if (!skipCarryForward) {
               // Item exists in previous day but is missing today. Carry it forward!
               // (Skipped when refreshing after a deliberate delete)
