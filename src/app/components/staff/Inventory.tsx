@@ -319,6 +319,10 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
         .select('item_name, sort_order')
         .eq('department', department);
       
+      if (sortErr) {
+        console.error('Sort fetch error (have you run the SQL migration?):', sortErr);
+      }
+
       const ordersMap: Record<string, number> = {};
       if (sortData) {
         sortData.forEach((s: any) => {
@@ -772,6 +776,7 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
       if (upsertErr) throw upsertErr;
     } catch (err: any) {
       console.error('Error updating sort orders:', err);
+      alert('Failed to save arrangement to database. Please ensure you have run the SQL migration (item_sort_orders table is missing).');
     }
   };
 
