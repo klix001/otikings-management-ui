@@ -591,6 +591,21 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
           .eq('id', editingItem.id);
 
         if (updateError) throw updateError;
+
+        // If super admin intentionally changes the opening stock, sync it BACKWARDS
+        // so that the previous day's closing stock matches the new opening.
+        // This ensures the auto-sync logic (which forces today's opening = yesterday's closing)
+        // respects the super admin's correction instead of instantly reverting it.
+        if (isSuperAdmin && parsedOpening !== editingItem.opening) {
+          const prevItem = previousDayItems.find(p => p.name.toLowerCase() === normalizedName.toLowerCase());
+          if (prevItem) {
+            const { error: prevError } = await supabase
+              .from('inventory_items')
+              .update({ closing: parsedOpening })
+              .eq('id', prevItem.id);
+            if (prevError) console.error('Error syncing backwards to previous day:', prevError);
+          }
+        }
       } else {
         const { error: insertError } = await supabase
           .from('inventory_items')
