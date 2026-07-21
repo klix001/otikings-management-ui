@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Calendar, Download, Loader2 } from 'lucide-react';
+import { Calendar, Download, Loader2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import {
   LineChart,
@@ -19,6 +19,7 @@ import {
 export default function BarAnalytics({ hideHeader = false }: { hideHeader?: boolean }) {
   const [dateRange, setDateRange] = useState('30days');
   const [loading, setLoading] = useState(true);
+  const [showCashModal, setShowCashModal] = useState(false);
   
   const [rawRevenue, setRawRevenue] = useState<{date: string, amount: number}[]>([]);
   const [rawCashAtHand, setRawCashAtHand] = useState<{date: string, amount: number}[]>([]);
@@ -69,7 +70,7 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
     fetchData();
   }, []);
 
-  const { filteredRevenue, filteredExpenses, totalRevenue, totalExpenses, totalCashAtHand, netProfit, profitMargin, revenueData, categoryExpenses, profitTrends } = useMemo(() => {
+  const { filteredRevenue, filteredExpenses, totalRevenue, totalExpenses, totalCashAtHand, filteredCashBreakdown, netProfit, profitMargin, revenueData, categoryExpenses, profitTrends } = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const end = new Date(today);
@@ -153,6 +154,7 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
       totalRevenue: totRev,
       totalExpenses: totExp,
       totalCashAtHand: totCash,
+      filteredCashBreakdown: fCash.sort((a, b) => b.date.localeCompare(a.date)),
       netProfit: net,
       profitMargin: margin,
       revenueData: revData,
@@ -213,9 +215,13 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
           <p className="text-sm text-neutral-600 mb-1">Total Expenses</p>
           <p className="text-2xl font-bold text-red-600">₦ {totalExpenses.toLocaleString()}</p>
         </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
+        <div
+          onClick={() => setShowCashModal(true)}
+          className="bg-white p-6 rounded-xl shadow-sm border border-neutral-200 cursor-pointer hover:shadow-md hover:border-purple-300 transition-all group"
+        >
           <p className="text-sm text-neutral-600 mb-1">Total Cash at Hand</p>
           <p className="text-2xl font-bold text-purple-600">₦ {totalCashAtHand.toLocaleString()}</p>
+          <p className="text-xs text-purple-400 mt-1 group-hover:text-purple-600 transition-colors">Click for daily breakdown →</p>
         </div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-neutral-200">
           <p className="text-sm text-neutral-600 mb-1">Net Profit</p>
@@ -338,6 +344,56 @@ export default function BarAnalytics({ hideHeader = false }: { hideHeader?: bool
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Cash at Hand Breakdown Modal */}
+      {showCashModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-neutral-200">
+              <div>
+                <h2 className="text-xl font-bold text-neutral-900">Daily Cash at Hand</h2>
+                <p className="text-sm text-neutral-500 mt-0.5">Breakdown from sales reports</p>
+              </div>
+              <button
+                onClick={() => setShowCashModal(false)}
+                className="p-2 hover:bg-neutral-100 rounded-lg transition-colors text-neutral-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-6">
+              {filteredCashBreakdown.length === 0 ? (
+                <p className="text-center text-neutral-500 py-8">No cash at hand records found for this period.</p>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-neutral-50 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-3 text-sm font-semibold text-neutral-700 rounded-tl-lg">Date</th>
+                      <th className="px-4 py-3 text-sm font-semibold text-neutral-700 text-right rounded-tr-lg">Cash at Hand</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {filteredCashBreakdown.map((entry, i) => (
+                      <tr key={i} className="hover:bg-neutral-50 transition-colors">
+                        <td className="px-4 py-3 text-sm text-neutral-700">{entry.date}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-neutral-900 text-right">₦ {entry.amount.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="border-t-2 border-neutral-300">
+                    <tr className="bg-purple-50">
+                      <td className="px-4 py-3 text-sm font-bold text-purple-800">Total</td>
+                      <td className="px-4 py-3 text-sm font-bold text-purple-800 text-right">
+                        ₦ {totalCashAtHand.toLocaleString()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

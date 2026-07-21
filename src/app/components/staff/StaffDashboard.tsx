@@ -11,6 +11,7 @@ import {
   Package,
   DollarSign,
   MessageSquare,
+  X,
 } from 'lucide-react';
 
 const quickActions = [
@@ -89,6 +90,8 @@ export default function StaffDashboard() {
     pendingCreditors: 0,
     cashAtHand: 0,
   });
+  const [dailyCashBreakdown, setDailyCashBreakdown] = useState<{date: string, amount: number}[]>([]);
+  const [showCashModal, setShowCashModal] = useState(false);
 
   useEffect(() => {
     const fetchRecentNotes = async () => {
@@ -114,7 +117,7 @@ export default function StaffDashboard() {
         const [invRes, credRes, salesRes] = await Promise.all([
           supabase.from('inventory_items').select('closing, sold, unit_price').eq('department', department).eq('date', today),
           supabase.from('creditors').select('id', { count: 'exact' }).eq('department', department).eq('status', 'UNPAID'),
-          supabase.from('sales_reports').select('cash_at_hand').eq('department', department)
+          supabase.from('sales_reports').select('date, cash_at_hand').eq('department', department)
         ]);
 
         let todaySales = 0;
@@ -129,15 +132,22 @@ export default function StaffDashboard() {
         const pendingCreditors = credRes.count || 0;
         
         let cashAtHand = 0;
+        const dailyCash: {date: string, amount: number}[] = [];
         if (salesRes.data) {
-          salesRes.data.forEach(report => {
-            cashAtHand += (Number(report.cash_at_hand) || 0);
+          salesRes.data.forEach((report: any) => {
+            const amt = Number(report.cash_at_hand) || 0;
+            cashAtHand += amt;
+            if (amt > 0) {
+              dailyCash.push({ date: report.date, amount: amt });
+            }
           });
         }
+        dailyCash.sort((a, b) => b.date.localeCompare(a.date));
+        setDailyCashBreakdown(dailyCash);
 
         setStats({
           todaySales,
-          itemsInStock, // Total physical items in stock
+          itemsInStock,
           pendingCreditors,
           cashAtHand
         });
@@ -166,15 +176,27 @@ export default function StaffDashboard() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {dynamicStatsCards.map((stat) => (
-          <div key={stat.label} className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-neutral-200">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-neutral-600">{stat.label}</span>
-              <stat.icon className={`w-5 h-5 ${stat.color}`} />
+        {dynamicStatsCards.map((stat) => {
+          const isCashCard = stat.label === 'Total Cash at Hand';
+          return (
+            <div
+              key={stat.label}
+              onClick={isCashCard ? () => setShowCashModal(true) : undefined}
+              className={`bg-white p-4 md:p-6 rounded-xl shadow-sm border border-neutral-200 ${
+                isCashCard ? 'cursor-pointer hover:shadow-md hover:border-purple-300 transition-all group' : ''
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-neutral-600">{stat.label}</span>
+                <stat.icon className={`w-5 h-5 ${stat.color}`} />
+              </div>
+              <p className="text-xl md:text-2xl font-bold text-neutral-900">{stat.value}</p>
+              {isCashCard && (
+                <p className="text-xs text-purple-500 mt-1 group-hover:text-purple-700 transition-colors">Click for daily breakdown →</p>
+              )}
             </div>
-            <p className="text-xl md:text-2xl font-bold text-neutral-900">{stat.value}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Quick Actions */}
@@ -239,6 +261,56 @@ export default function StaffDashboard() {
           </div>
         )}
       </div>
+
+      {/* Cash at Hand Breakdown Modal */}
+      {showCashModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-neutral-200">
+              <div>
+                <h2 className="text-xl font-bold text-neutral-900">Daily Cash at Hand</h2>
+                <p className="text-sm text-neutral-500 mt-0.5">Breakdown from sales reports</p>
+              </div>
+              <button
+                onClick={() => setShowCashModal(false)}
+                className="p-2 hover:bg-neutral-100 rounded-lg transition-colors text-neutral-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-6">
+              {dailyCashBreakdown.length === 0 ? (
+                <p className="text-center text-neutral-500 py-8">No cash at hand records found.</p>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-neutral-50 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-3 text-sm font-semibold text-neutral-700 rounded-tl-lg">Date</th>
+                      <th className="px-4 py-3 text-sm font-semibold text-neutral-700 text-right rounded-tr-lg">Cash at Hand</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {dailyCashBreakdown.map((entry, i) => (
+                      <tr key={i} className="hover:bg-neutral-50 transition-colors">
+                        <td className="px-4 py-3 text-sm text-neutral-700">{entry.date}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-neutral-900 text-right">₦ {entry.amount.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="border-t-2 border-neutral-300">
+                    <tr className="bg-purple-50">
+                      <td className="px-4 py-3 text-sm font-bold text-purple-800">Total</td>
+                      <td className="px-4 py-3 text-sm font-bold text-purple-800 text-right">
+                        ₦ {dailyCashBreakdown.reduce((s, e) => s + e.amount, 0).toLocaleString()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
