@@ -302,13 +302,15 @@ export default function Creditors({ department: propDepartment }: CreditorsProps
                             Mark Paid
                           </button>
                         )}
-                        <button
-                          onClick={() => handleOpenEdit(creditor)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Edit Creditor"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
+                        {creditor.status === 'UNPAID' && (
+                          <button
+                            onClick={() => handleOpenEdit(creditor)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Edit Creditor"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
