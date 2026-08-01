@@ -19,6 +19,12 @@ export default function AdminCreditors() {
   const [creditors, setCreditors] = useState<Creditor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Part pay state
+  const [showPartPayModal, setShowPartPayModal] = useState(false);
+  const [partPayCreditor, setPartPayCreditor] = useState<Creditor | null>(null);
+  const [partPayAmount, setPartPayAmount] = useState<number | ''>('');
 
   const fetchCreditors = async () => {
     setLoading(true);
@@ -72,6 +78,58 @@ export default function AdminCreditors() {
     } catch (err: any) {
       console.error('Error updating creditor:', err);
       alert(err.message || 'Failed to update creditor.');
+    }
+  };
+
+  const handleOpenPartPay = (creditor: Creditor) => {
+    setPartPayCreditor(creditor);
+    setPartPayAmount('');
+    setShowPartPayModal(true);
+  };
+
+  const handlePartPaySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!partPayCreditor) return;
+
+    const amountPaid = Number(partPayAmount) || 0;
+    if (amountPaid <= 0) {
+      alert('Please enter a valid amount.');
+      return;
+    }
+
+    if (amountPaid >= partPayCreditor.amount) {
+      handleMarkPaid(partPayCreditor.id);
+      setShowPartPayModal(false);
+      setPartPayCreditor(null);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const newAmount = partPayCreditor.amount - amountPaid;
+      const paymentNote = `[Part payment of ₦${amountPaid.toLocaleString()} on ${new Date().toISOString().split('T')[0]}]`;
+      const newReason = partPayCreditor.reason 
+        ? `${partPayCreditor.reason}\n${paymentNote}` 
+        : paymentNote;
+
+      const { error: updateErr } = await supabase
+        .from('creditors')
+        .update({
+          amount: newAmount,
+          reason: newReason
+        })
+        .eq('id', partPayCreditor.id);
+
+      if (updateErr) throw updateErr;
+
+      setShowPartPayModal(false);
+      setPartPayCreditor(null);
+      await fetchCreditors();
+    } catch (err: any) {
+      console.error('Error processing part payment:', err);
+      alert(err.message || 'Failed to process part payment.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -232,14 +290,24 @@ export default function AdminCreditors() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-center">
-                      {creditor.status === 'UNPAID' && (
-                        <button
-                          onClick={() => handleMarkPaid(creditor.id)}
-                          className="px-3 py-1 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium"
-                        >
-                          Mark Paid
-                        </button>
-                      )}
+                      <div className="flex items-center justify-center gap-2">
+                        {creditor.status === 'UNPAID' && (
+                          <button
+                            onClick={() => handleMarkPaid(creditor.id)}
+                            className="px-3 py-1 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium whitespace-nowrap"
+                          >
+                            Mark Paid
+                          </button>
+                        )}
+                        {creditor.status === 'UNPAID' && (
+                          <button
+                            onClick={() => handleOpenPartPay(creditor)}
+                            className="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-medium whitespace-nowrap"
+                          >
+                            Part Pay
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -252,6 +320,50 @@ export default function AdminCreditors() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Part Pay Modal */}
+      {showPartPayModal && partPayCreditor && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <h2 className="text-2xl font-bold text-neutral-900 mb-4">
+              Part Payment
+            </h2>
+            <p className="text-neutral-600 mb-4">
+              Recording partial payment for <span className="font-semibold">{partPayCreditor.name}</span>.
+              <br/>
+              Current Debt: <span className="font-semibold text-orange-600">₦ {partPayCreditor.amount.toLocaleString()}</span>
+            </p>
+            <form onSubmit={handlePartPaySubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-neutral-700 mb-1">Amount Paid (₦)</label>
+                <input
+                  type="number" min="1" max={partPayCreditor.amount} required
+                  value={partPayAmount} onChange={(e) => setPartPayAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="0"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPartPayModal(false)}
+                  className="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-75"
+                >
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Submit Payment
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

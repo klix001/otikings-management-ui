@@ -165,7 +165,24 @@ export default function StaffManagement() {
           }
         }
 
-        // Update profile in database
+        // Call the RPC function for all edits to update email and password
+        const rpcPayload: any = {
+          target_user_id: editingProfile.id,
+          new_email: emailInput.trim(),
+          new_password: password && password.length > 0 ? password : null
+        };
+
+        if (rpcPayload.new_password && rpcPayload.new_password.length < 6) {
+          throw new Error('New password must be at least 6 characters.');
+        }
+
+        const { error: rpcError } = await supabase.rpc('admin_update_user', rpcPayload);
+        if (rpcError) {
+          console.error('RPC Error:', rpcError);
+          throw new Error('Failed to update user credentials. Please ensure the SQL RPC function has been created in your Supabase database.');
+        }
+
+        // Update profile in database for name, role, and staff_id
         const profileUpdates: Record<string, any> = {
           full_name: fullName.trim(),
           staff_id: isStaffRole ? staffId.trim() : null
@@ -181,33 +198,6 @@ export default function StaffManagement() {
           .eq('id', editingProfile.id);
 
         if (profileError) throw profileError;
-
-        // If editing self, update auth credentials (email/password) if changed
-        if (isEditingSelf) {
-          const authUpdates: Record<string, string> = {};
-          if (emailInput.trim() && emailInput.trim() !== editingProfile.email) {
-            authUpdates.email = emailInput.trim();
-          }
-          if (password && password.length > 0) {
-            if (password.length < 6) {
-              throw new Error('New password must be at least 6 characters.');
-            }
-            authUpdates.password = password;
-          }
-
-          if (Object.keys(authUpdates).length > 0) {
-            const { error: authUpdateError } = await supabase.auth.updateUser(authUpdates);
-            if (authUpdateError) throw authUpdateError;
-
-            // If email changed, also update it in profiles table
-            if (authUpdates.email) {
-              await supabase
-                .from('profiles')
-                .update({ email: authUpdates.email })
-                .eq('id', editingProfile.id);
-            }
-          }
-        }
 
       } else {
         // --- Create flow ---
@@ -615,58 +605,43 @@ export default function StaffManagement() {
               )}
 
               {/* Email Options (Only shown during Edit Flow) */}
-              {editingProfile && (() => {
-                const isEditingSelf = currentUser && editingProfile.id === currentUser.id;
-                
-                return (
-                  <div>
-                    <label className="block text-sm font-semibold text-neutral-700 mb-1.5">
-                      Email Address {!isEditingSelf && <span className="text-xs font-normal text-neutral-400">(Read-Only)</span>}
-                    </label>
-                    {isEditingSelf ? (
-                      <input
-                        type="email"
-                        required
-                        placeholder="your.email@example.com"
-                        value={emailInput}
-                        onChange={(e) => setEmailInput(e.target.value)}
-                        className="w-full px-3.5 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all text-neutral-900"
-                      />
-                    ) : (
-                      <input
-                        type="email"
-                        readOnly
-                        value={emailInput}
-                        className="w-full px-3.5 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-500 font-mono text-xs cursor-not-allowed outline-none"
-                      />
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* Password — shown during creation OR when editing own profile */}
-              {(!editingProfile || (editingProfile && currentUser && editingProfile.id === currentUser.id)) && (
+              {editingProfile && (
                 <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-1.5 flex justify-between items-center">
-                    <span>{editingProfile ? 'New Password' : 'Password'} {editingProfile && <span className="text-xs font-normal text-neutral-400">(leave blank to keep current)</span>}</span>
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="text-xs text-orange-600 hover:text-orange-700 font-medium"
-                    >
-                      {showPassword ? <span className="flex items-center gap-1"><EyeOff className="w-3.5 h-3.5" /> Hide</span> : <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> Show</span>}
-                    </button>
+                  <label className="block text-sm font-semibold text-neutral-700 mb-1.5">
+                    Email Address
                   </label>
                   <input
-                    type={showPassword ? 'text' : 'password'}
-                    required={!editingProfile}
-                    placeholder={editingProfile ? 'Enter new password to change' : 'Password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    type="email"
+                    required
+                    placeholder="user@example.com"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
                     className="w-full px-3.5 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all text-neutral-900"
                   />
                 </div>
               )}
+
+              {/* Password */}
+              <div>
+                <label className="block text-sm font-semibold text-neutral-700 mb-1.5 flex justify-between items-center">
+                  <span>{editingProfile ? 'New Password' : 'Password'} {editingProfile && <span className="text-xs font-normal text-neutral-400">(leave blank to keep current)</span>}</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-xs text-orange-600 hover:text-orange-700 font-medium"
+                  >
+                    {showPassword ? <span className="flex items-center gap-1"><EyeOff className="w-3.5 h-3.5" /> Hide</span> : <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> Show</span>}
+                  </button>
+                </label>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required={!editingProfile}
+                  placeholder={editingProfile ? 'Enter new password to change' : 'Password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3.5 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all text-neutral-900"
+                />
+              </div>
 
               {/* Modal Actions */}
               <div className="flex justify-end gap-3 pt-4 border-t border-neutral-100">

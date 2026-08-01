@@ -23,7 +23,7 @@ export default function KitchenManagement() {
             .eq('id', user.id)
             .single();
           if (profile) {
-            setIsSuperAdmin(['super_admin', 'superadmin'].includes(profile.role));
+            setIsSuperAdmin(['admin', 'super_admin', 'superadmin'].includes(profile.role));
           }
         }
       } catch (err) {

@@ -676,8 +676,9 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
         if (insertError) throw insertError;
       }
 
-      // Deduct from store if addition increased (bar only)
-      if (department === 'bar' && storeDeduction > 0) {
+      // Update store inventory when addition changed (bar only)
+      // storeDeduction > 0 → taking more from store; storeDeduction < 0 → returning to store
+      if (department === 'bar' && storeDeduction !== 0) {
         const storeItem = storeItems.find((s) => s.name.toLowerCase() === normalizedName.toLowerCase());
         if (storeItem) {
           const newLoaded = storeItem.loaded + storeDeduction;
@@ -693,7 +694,7 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
 
           if (storeError) {
             console.error('Error updating store:', storeError);
-            alert('Stockbook updated, but failed to deduct from store: ' + storeError.message);
+            alert('Stockbook updated, but failed to update store: ' + storeError.message);
           }
         }
       }
