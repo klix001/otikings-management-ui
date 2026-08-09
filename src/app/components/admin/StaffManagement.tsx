@@ -285,6 +285,25 @@ export default function StaffManagement() {
 
       // Success
       setIsModalOpen(false);
+
+      // Optimistic local state update for edits
+      if (editingProfile) {
+        setProfiles((prev) =>
+          prev.map((p) =>
+            p.id === editingProfile.id
+              ? {
+                  ...p,
+                  full_name: fullName.trim(),
+                  role: (currentUser && editingProfile.id === currentUser.id) ? p.role : role,
+                  staff_id: (role === 'bar' || role === 'kitchen' || role === 'admin') ? staffId.trim() : null,
+                  email: emailInput.trim() || p.email,
+                }
+              : p
+          )
+        );
+      }
+
+      // Also refresh from server to confirm
       fetchProfiles();
     } catch (err: any) {
       setError(err.message || 'An error occurred.');
@@ -299,15 +318,38 @@ export default function StaffManagement() {
       return;
     }
 
-    try {
-      const { error: deleteError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', id);
+    // Optimistic UI: remove from list immediately
+    const previousProfiles = [...profiles];
+    setProfiles((prev) => prev.filter((p) => p.id !== id));
 
-      if (deleteError) throw deleteError;
+    try {
+      // Use RPC to delete from both auth.users and profiles
+      const { error: rpcError } = await supabase.rpc('admin_delete_user', {
+        target_user_id: id
+      });
+
+      if (rpcError) {
+        // If the RPC function doesn't exist yet, fall back to deleting profile + show guidance
+        if (rpcError.message?.includes('function') || rpcError.code === '42883') {
+          // Fallback: delete from profiles table directly
+          const { error: deleteError } = await supabase
+            .from('profiles')
+            .delete()
+            .eq('id', id);
+
+          if (deleteError) throw deleteError;
+
+          alert('Profile removed, but the auth user may still exist. Please run the supabase_rpc_delete_user.sql script in your Supabase SQL Editor for full user deletion.');
+        } else {
+          throw rpcError;
+        }
+      }
+
+      // Refresh to confirm server state
       fetchProfiles();
     } catch (err: any) {
+      // Rollback optimistic update on failure
+      setProfiles(previousProfiles);
       alert(err.message || 'Failed to delete profile.');
     }
   };
