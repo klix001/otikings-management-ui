@@ -34,3 +34,6 @@ dist-ssr
 # Supabase
 supabase/.temp/
 supabase/.branches/
+
+# Scratch/debug scripts
+scratch/
