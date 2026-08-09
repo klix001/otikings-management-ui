@@ -262,23 +262,56 @@ export default function StaffManagement() {
           }
         });
 
-        if (signUpError) {
-          if (signUpError.message.toLowerCase().includes('rate limit') || signUpError.message.toLowerCase().includes('email')) {
-            throw new Error('Supabase email rate limit exceeded. To fix this, please open your Supabase Dashboard -> Go to Authentication -> Providers -> Email -> Turn "Confirm email" OFF. This will enable instant signup without verification emails.');
-          }
-          throw signUpError;
-        }
-        if (!signUpData.user) throw new Error('Failed to create account.');
+        let userId: string;
 
-        // Update profile in database
+        if (signUpError) {
+          // Handle ghost user: exists in auth.users but was deleted from profiles
+          if (signUpError.message.toLowerCase().includes('already registered') || signUpError.message.toLowerCase().includes('already been registered')) {
+            // Try signing in with the new password (won't work for ghost users with old password)
+            // Instead, use RPC to update the ghost user's password, then re-create their profile
+            const { data: ghostUser } = await tempClient.auth.signInWithPassword({
+              email: targetEmail,
+              password,
+            });
+
+            if (ghostUser?.user) {
+              userId = ghostUser.user.id;
+              await tempClient.auth.signOut();
+            } else {
+              // Password doesn't match the ghost account — update it via RPC
+              // Find the ghost user's ID by querying auth through a helper RPC
+              const { data: ghostId, error: ghostError } = await supabase.rpc('find_user_by_email', { target_email: targetEmail });
+              if (ghostError || !ghostId) {
+                throw new Error('A ghost account exists for this email but could not be recovered. Please go to Supabase Dashboard → SQL Editor and run the cleanup script in supabase_rpc_delete_user.sql to remove ghost users, then try again.');
+              }
+              // Update the ghost user's password
+              await supabase.rpc('admin_update_user', {
+                target_user_id: ghostId,
+                new_email: targetEmail,
+                new_password: password
+              });
+              userId = ghostId;
+            }
+          } else if (signUpError.message.toLowerCase().includes('rate limit') || signUpError.message.toLowerCase().includes('email')) {
+            throw new Error('Supabase email rate limit exceeded. To fix this, please open your Supabase Dashboard -> Go to Authentication -> Providers -> Email -> Turn "Confirm email" OFF. This will enable instant signup without verification emails.');
+          } else {
+            throw signUpError;
+          }
+        } else {
+          if (!signUpData.user) throw new Error('Failed to create account.');
+          userId = signUpData.user.id;
+        }
+
+        // Upsert profile in database (insert if missing, update if exists)
         const { error: profileError } = await supabase
           .from('profiles')
-          .update({
+          .upsert({
+            id: userId,
             staff_id: isStaffRole ? staffId : null,
             full_name: fullName.trim(),
-            role: role
-          })
-          .eq('id', signUpData.user.id);
+            role: role,
+            email: targetEmail,
+          }, { onConflict: 'id' });
 
         if (profileError) throw profileError;
       }
