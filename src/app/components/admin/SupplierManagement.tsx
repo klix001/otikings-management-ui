@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { TrendingDown, Plus, Edit2, Phone, Mail, MapPin, Package, Loader2, AlertCircle } from 'lucide-react';
+import { TrendingDown, Plus, Edit2, Phone, Mail, MapPin, Package, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface SupplierItem {
@@ -36,6 +36,7 @@ export default function SupplierManagement() {
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingItemName, setEditingItemName] = useState<string>('');
   const [editingItemPrice, setEditingItemPrice] = useState<string>('');
 
   const fetchSuppliers = async () => {
@@ -138,6 +139,7 @@ export default function SupplierManagement() {
 
   const handleStartEdit = (item: SupplierItem) => {
     setEditingItemId(item.id);
+    setEditingItemName(item.name);
     setEditingItemPrice(item.price.toString());
   };
 
@@ -146,6 +148,7 @@ export default function SupplierManagement() {
       const { error: updateErr } = await supabase
         .from('supplier_products')
         .update({
+          product_name: editingItemName,
           price: Number(editingItemPrice)
         })
         .eq('id', Number(itemId));
@@ -155,8 +158,27 @@ export default function SupplierManagement() {
       setEditingItemId(null);
       await fetchSuppliers();
     } catch (err: any) {
-      console.error('Error updating price:', err);
-      alert(err.message || 'Failed to update price');
+      console.error('Error updating item:', err);
+      alert(err.message || 'Failed to update item');
+    }
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    const confirmDelete = window.confirm("Are you sure you want to delete this item?");
+    if (!confirmDelete) return;
+
+    try {
+      const { error: deleteErr } = await supabase
+        .from('supplier_products')
+        .delete()
+        .eq('id', Number(itemId));
+
+      if (deleteErr) throw deleteErr;
+
+      await fetchSuppliers();
+    } catch (err: any) {
+      console.error('Error deleting item:', err);
+      alert(err.message || 'Failed to delete item');
     }
   };
 
@@ -512,7 +534,18 @@ export default function SupplierManagement() {
                   <tbody className="divide-y divide-neutral-200">
                     {suppliers.find(s => s.id === showManagePrices)?.items.map(item => (
                       <tr key={item.id} className="hover:bg-neutral-50">
-                        <td className="px-4 py-3 text-sm text-neutral-900">{item.name}</td>
+                        <td className="px-4 py-3 text-sm text-neutral-900">
+                          {editingItemId === item.id ? (
+                            <input
+                              type="text"
+                              value={editingItemName}
+                              onChange={(e) => setEditingItemName(e.target.value)}
+                              className="w-full px-2 py-1 border border-neutral-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                          ) : (
+                            item.name
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-sm font-semibold text-neutral-900 text-right">
                           {editingItemId === item.id ? (
                             <div className="flex justify-end">
@@ -545,12 +578,22 @@ export default function SupplierManagement() {
                               </button>
                             </div>
                           ) : (
-                            <button 
-                              onClick={() => handleStartEdit(item)}
-                              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                            >
-                              Edit
-                            </button>
+                            <div className="flex items-center justify-center gap-4">
+                              <button 
+                                onClick={() => handleStartEdit(item)}
+                                className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                                Edit
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteItem(item.id)}
+                                className="text-red-600 hover:text-red-800 text-sm font-medium flex items-center gap-1"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Delete
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
