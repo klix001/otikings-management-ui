@@ -15,12 +15,14 @@ export default function Login() {
   useEffect(() => {
     const checkExistingSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
+        // Use getUser() to validate session against the server, not getSession()
+        // which only reads from localStorage (can return stale/expired tokens)
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (!userError && user) {
           const { data: profile } = await supabase
             .from('profiles')
             .select('role')
-            .eq('id', session.user.id)
+            .eq('id', user.id)
             .single();
 
           if (profile) {

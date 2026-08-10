@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { Loader2 } from 'lucide-react';
@@ -10,9 +10,10 @@ interface AuthGuardProps {
 
 /**
  * AuthGuard wraps protected layouts to enforce session-based access control.
- * - Checks Supabase auth session on mount
+ * - Uses getUser() to validate the session token against Supabase's server
+ *   (getSession() only reads cached localStorage data, which can be stale/expired)
  * - Validates user role against allowed roles for the current route
- * - Listens for auth state changes (SIGNED_OUT) and redirects to login
+ * - Listens for auth state changes (SIGNED_OUT, TOKEN_REFRESHED) and re-validates
  * - Replaces browser history on redirect so back-button can't revisit
  */
 export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
@@ -21,16 +22,26 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
 
+  const redirectToLogin = useCallback(() => {
+    setAuthorized(false);
+    setLoading(false);
+    navigate('/', { replace: true });
+  }, [navigate]);
+
   useEffect(() => {
     let mounted = true;
 
     const checkAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser() sends the token to Supabase's server for validation,
+        // unlike getSession() which only reads from local storage.
+        // This is the ONLY reliable way to verify a session is actually valid.
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-        if (!session?.user) {
-          // No active session — redirect to login, replacing history
-          if (mounted) navigate('/', { replace: true });
+        if (userError || !user) {
+          // Invalid/expired token or no session at all — clean up and redirect
+          await supabase.auth.signOut();
+          if (mounted) redirectToLogin();
           return;
         }
 
@@ -38,12 +49,12 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role')
-          .eq('id', session.user.id)
+          .eq('id', user.id)
           .single();
 
         if (profileError || !profile) {
           await supabase.auth.signOut();
-          if (mounted) navigate('/', { replace: true });
+          if (mounted) redirectToLogin();
           return;
         }
 
@@ -52,7 +63,7 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
         if (!isAllowed) {
           // User is authenticated but not authorized for this route
           await supabase.auth.signOut();
-          if (mounted) navigate('/', { replace: true });
+          if (mounted) redirectToLogin();
           return;
         }
 
@@ -62,19 +73,21 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
         }
       } catch (err) {
         console.error('Auth check failed:', err);
-        if (mounted) navigate('/', { replace: true });
+        if (mounted) redirectToLogin();
       }
     };
 
     checkAuth();
 
-    // Listen for auth state changes (logout, token expiry, etc.)
+    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (!mounted) return;
+
       if (event === 'SIGNED_OUT') {
-        if (mounted) {
-          setAuthorized(false);
-          navigate('/', { replace: true });
-        }
+        redirectToLogin();
+      } else if (event === 'TOKEN_REFRESHED') {
+        // Token was refreshed — re-validate to ensure the user is still authorized
+        checkAuth();
       }
     });
 
@@ -82,7 +95,7 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [navigate, allowedRoles, location.pathname]);
+  }, [navigate, allowedRoles, location.pathname, redirectToLogin]);
 
   if (loading) {
     return (
