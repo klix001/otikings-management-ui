@@ -108,16 +108,18 @@ export default function Login() {
           throw new Error('Staff ID must start with BAR, KIT, or ADM prefix.');
         }
 
-        // Query profiles table to find the user with this staff_id
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('email, role')
-          .eq('staff_id', resolvedEmail)
-          .maybeSingle();
+        // Use RPC function to look up staff_id → email/role.
+        // This bypasses RLS (which blocks unauthenticated reads on profiles)
+        // using SECURITY DEFINER, so it works on any device before login.
+        const { data: rpcResult, error: rpcError } = await supabase
+          .rpc('lookup_staff_id', { p_staff_id: resolvedEmail });
 
-        if (profileError) {
+        if (rpcError) {
           throw new Error('Error verifying Staff ID.');
         }
+
+        // RPC returns null if no matching staff_id found
+        const profile = rpcResult as { email: string; role: string } | null;
 
         if (!profile) {
           throw new Error('Invalid Staff ID. Please check and try again.');
