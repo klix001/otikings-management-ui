@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { Lock, Mail, ArrowRight } from 'lucide-react';
+import { Lock, Mail, ArrowRight, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export default function Login() {
@@ -9,6 +9,41 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', session.user.id)
+            .single();
+
+          if (profile) {
+            if (profile.role === 'bar') {
+              navigate('/staff', { replace: true });
+              return;
+            } else if (profile.role === 'kitchen') {
+              navigate('/kitchen-staff', { replace: true });
+              return;
+            } else if (['admin', 'super_admin', 'superadmin'].includes(profile.role)) {
+              navigate('/admin', { replace: true });
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        // Session check failed, show login form
+      } finally {
+        setCheckingSession(false);
+      }
+    };
+    checkExistingSession();
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,7 +94,7 @@ export default function Login() {
           throw new Error('Staff are not permitted to log in with an email address. Please use your Staff ID.');
         }
 
-        navigate('/admin');
+        navigate('/admin', { replace: true });
       } else {
         // Staff ID login: restricted to staff/admin roles (BAR/KIT/ADM prefixes)
         const normalizedInput = resolvedEmail.toUpperCase();
@@ -114,11 +149,11 @@ export default function Login() {
 
         // Route based on role
         if (profile.role === 'bar') {
-          navigate('/staff');
+          navigate('/staff', { replace: true });
         } else if (profile.role === 'kitchen') {
-          navigate('/kitchen-staff');
+          navigate('/kitchen-staff', { replace: true });
         } else if (['admin', 'super_admin', 'superadmin'].includes(profile.role)) {
-          navigate('/admin');
+          navigate('/admin', { replace: true });
         } else {
           throw new Error('Unauthorized role type for Staff ID login.');
         }
@@ -129,6 +164,14 @@ export default function Login() {
       setLoading(false);
     }
   };
+
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+        <Loader2 className="w-8 h-8 animate-spin text-green-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-neutral-50">

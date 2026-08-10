@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Eye, Loader2, AlertCircle, Package, ArrowRight, Truck, Upload, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Eye, Loader2, AlertCircle, Package, ArrowRight, Truck, Upload, Pencil, Trash2, X } from 'lucide-react';
 import { useLocation } from 'react-router';
 import { supabase } from '../../lib/supabase';
 
@@ -23,6 +23,13 @@ interface StoreItem {
   supplied: number;
   loaded: number;
   closing: number;
+}
+
+interface DeliveryItemInput {
+  name: string;
+  price: number | '';
+  quantity: number | '';
+  itemQtyPerPack: number | '';
 }
 
 interface SuppliersProps {
@@ -69,6 +76,27 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
   const [itemQtyPerPack, setItemQtyPerPack] = useState<number | ''>(24);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
+  // Dynamic delivery items for bulk entry form
+  const [deliveryItems, setDeliveryItems] = useState<DeliveryItemInput[]>([
+    { name: '', price: '', quantity: '', itemQtyPerPack: 24 }
+  ]);
+
+  const addDeliveryItemRow = () => {
+    setDeliveryItems([...deliveryItems, { name: '', price: '', quantity: '', itemQtyPerPack: 24 }]);
+  };
+
+  const removeDeliveryItemRow = (index: number) => {
+    const updated = [...deliveryItems];
+    updated.splice(index, 1);
+    setDeliveryItems(updated);
+  };
+
+  const updateDeliveryItemField = (index: number, field: keyof DeliveryItemInput, value: any) => {
+    const updated = [...deliveryItems];
+    updated[index] = { ...updated[index], [field]: value };
+    setDeliveryItems(updated);
+  };
+
   const resetDeliveryForm = () => {
     setDate(new Date().toISOString().split('T')[0]);
     setSupplier('');
@@ -77,6 +105,7 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
     setQuantity('');
     setItemQtyPerPack(24);
     setReceiptFile(null);
+    setDeliveryItems([{ name: '', price: '', quantity: '', itemQtyPerPack: 24 }]);
   };
 
   // ─── Data Fetching ─────────────────────────────────────────────────
@@ -141,18 +170,12 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
   // ─── Add Delivery (Supplier → Store) ──────────────────────────────
   const handleAddDelivery = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsedQuantity = Number(quantity) || 0;
-    const parsedPrice = Number(price) || 0;
-    const parsedItemQtyPerPack = Number(itemQtyPerPack) || 1;
-
-    if (!supplier || !items || parsedQuantity <= 0) {
-      alert('Please fill in all required fields.');
+    const validItems = deliveryItems.filter(item => item.name.trim() && (Number(item.quantity) || 0) > 0);
+    if (!supplier || validItems.length === 0) {
+      alert('Please fill in Supplier Name and at least one item with Quantity.');
       return;
     }
     setSubmitting(true);
-
-    const totalUnits = parsedQuantity * parsedItemQtyPerPack;
-    const unitPricePerItem = parsedItemQtyPerPack > 0 ? Math.round(parsedPrice / parsedItemQtyPerPack) : 0;
     let finalReceiptUrl = '';
 
     try {
@@ -175,63 +198,70 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
         finalReceiptUrl = publicUrlData.publicUrl;
       }
 
-      // 2. Log the delivery record
-      const { error: insertErr } = await supabase
-        .from('supplier_deliveries')
-        .insert([{
-          date,
-          supplier,
-          price: parsedPrice,
-          items,
-          quantity: parsedQuantity,
-          item_qty_per_pack: parsedItemQtyPerPack,
-          receipt_url: finalReceiptUrl || null,
-          department,
-        }]);
+      // 2. Loop through all valid items and insert delivery records and update store inventory
+      for (const item of validItems) {
+        const parsedQuantity = Number(item.quantity) || 0;
+        const parsedPrice = Number(item.price) || 0;
+        const parsedItemQtyPerPack = Number(item.itemQtyPerPack) || 1;
+        const totalUnits = parsedQuantity * parsedItemQtyPerPack;
+        const itemName = item.name.trim();
 
-      if (insertErr) throw insertErr;
-
-      // 3. Update store inventory (upsert — add to existing or create new)
-      //    Use case-insensitive matching to prevent duplicates like "Legend" vs "legend"
-      const { data: existing, error: findErr } = await supabase
-        .from('store_inventory')
-        .select('*')
-        .ilike('name', items.trim())
-        .eq('department', department)
-        .maybeSingle();
-
-      if (findErr) throw findErr;
-
-      // Use existing name casing if found, otherwise use trimmed input
-      const normalizedItemName = existing ? existing.name : items.trim();
-
-      if (existing) {
-        const newSupplied = Number(existing.supplied) + totalUnits;
-        const newClosing = Number(existing.opening) + newSupplied - Number(existing.loaded);
-
-        const { error: updateErr } = await supabase
-          .from('store_inventory')
-          .update({
-            supplied: newSupplied,
-            closing: newClosing,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existing.id);
-
-        if (updateErr) throw updateErr;
-      } else {
-        const { error: createErr } = await supabase
-          .from('store_inventory')
+        // Log the delivery record
+        const { error: insertErr } = await supabase
+          .from('supplier_deliveries')
           .insert([{
-            name: normalizedItemName,
-            opening: 0,
-            supplied: totalUnits,
-            loaded: 0,
-            closing: totalUnits,
+            date,
+            supplier,
+            price: parsedPrice,
+            items: itemName,
+            quantity: parsedQuantity,
+            item_qty_per_pack: parsedItemQtyPerPack,
+            receipt_url: finalReceiptUrl || null,
             department,
           }]);
 
-        if (createErr) throw createErr;
+        if (insertErr) throw insertErr;
+
+        // Update store inventory
+        const { data: existing, error: findErr } = await supabase
+          .from('store_inventory')
+          .select('*')
+          .ilike('name', itemName)
+          .eq('department', department)
+          .maybeSingle();
+
+        if (findErr) throw findErr;
+
+        const normalizedItemName = existing ? existing.name : itemName;
+
+        if (existing) {
+          const newSupplied = Number(existing.supplied) + totalUnits;
+          const newClosing = Number(existing.opening) + newSupplied - Number(existing.loaded);
+
+          const { error: updateErr } = await supabase
+            .from('store_inventory')
+            .update({
+              supplied: newSupplied,
+              closing: newClosing,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id);
+
+          if (updateErr) throw updateErr;
+        } else {
+          const { error: createErr } = await supabase
+            .from('store_inventory')
+            .insert([{
+              name: normalizedItemName,
+              opening: 0,
+              supplied: totalUnits,
+              loaded: 0,
+              closing: totalUnits,
+              department,
+            }]);
+
+          if (createErr) throw createErr;
+        }
       }
 
       setShowAddDelivery(false);
@@ -499,10 +529,53 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
     if (userInput?.toLowerCase() !== 'delete') return;
 
     try {
-      const { error } = await supabase.from('supplier_deliveries').delete().eq('id', id);
-      if (error) throw error;
+      // 1. Fetch delivery details before deleting
+      const { data: delivery, error: fetchErr } = await supabase
+        .from('supplier_deliveries')
+        .select('items, quantity, item_qty_per_pack')
+        .eq('id', id)
+        .single();
+
+      if (fetchErr) throw fetchErr;
+
+      if (delivery) {
+        const totalUnits = (Number(delivery.quantity) || 0) * (Number(delivery.item_qty_per_pack) || 1);
+
+        // 2. Find corresponding store inventory item
+        const { data: existing, error: findErr } = await supabase
+          .from('store_inventory')
+          .select('*')
+          .ilike('name', delivery.items.trim())
+          .eq('department', department)
+          .maybeSingle();
+
+        if (findErr) throw findErr;
+
+        if (existing) {
+          // 3. Deduct supplied quantity from store inventory
+          const newSupplied = Math.max(0, Number(existing.supplied) - totalUnits);
+          const newClosing = Number(existing.opening) + newSupplied - Number(existing.loaded);
+
+          const { error: updateErr } = await supabase
+            .from('store_inventory')
+            .update({
+              supplied: newSupplied,
+              closing: newClosing,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id);
+
+          if (updateErr) throw updateErr;
+        }
+      }
+
+      // 4. Delete delivery record
+      const { error: deleteErr } = await supabase.from('supplier_deliveries').delete().eq('id', id);
+      if (deleteErr) throw deleteErr;
+
       await fetchAll();
     } catch (err: any) {
+      console.error('Error deleting delivery:', err);
       alert(err.message || 'Failed to delete delivery.');
     }
   };
@@ -784,50 +857,114 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
       {/* ─── Add Delivery Modal ──────────────────────────────────────── */}
       {showAddDelivery && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[95vh] overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full p-6 max-h-[95vh] overflow-y-auto">
             <h2 className="text-2xl font-bold text-neutral-900 mb-4">Add Supplier Delivery</h2>
             <form onSubmit={handleAddDelivery} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-neutral-700 mb-1">Date</label>
-                <input type="date" required value={date} onChange={(e) => setDate(e.target.value)}
-                  className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-neutral-700 mb-1">Date</label>
+                  <input type="date" required value={date} onChange={(e) => setDate(e.target.value)}
+                    className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-neutral-700 mb-1">Supplier Name</label>
+                  <input type="text" required value={supplier} onChange={(e) => setSupplier(e.target.value)}
+                    className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="e.g., East African Breweries" />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-neutral-700 mb-1">Supplier Name</label>
-                <input type="text" required value={supplier} onChange={(e) => setSupplier(e.target.value)}
-                  className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                  placeholder="e.g., East African Breweries" />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-neutral-700 mb-1">Item (Product Name)</label>
-                <input type="text" required value={items} onChange={(e) => setItems(e.target.value)}
-                  className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                  placeholder="e.g., Tusker Beer"
-                  list="store-items-list" />
+
+              {/* Items Section */}
+              <div className="border-t border-neutral-200 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold text-neutral-800">Delivered Items</h3>
+                  <button
+                    type="button"
+                    onClick={addDeliveryItemRow}
+                    className="flex items-center gap-1 px-3 py-1 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors text-xs font-semibold"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Item
+                  </button>
+                </div>
+
                 <datalist id="store-items-list">
                   {storeItems.map((item) => (
                     <option key={item.id} value={item.name} />
                   ))}
                 </datalist>
-                <p className="text-xs text-neutral-400 mt-1">Select existing item or type a new name.</p>
+
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                  {deliveryItems.map((item, idx) => (
+                    <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 relative space-y-3" key={idx}>
+                      {deliveryItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeDeliveryItemRow(idx)}
+                          className="absolute top-2 right-2 p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-semibold text-neutral-600 mb-1">Item Name</label>
+                          <input
+                            type="text"
+                            placeholder="e.g., Tusker Beer"
+                            required
+                            value={item.name}
+                            onChange={(e) => updateDeliveryItemField(idx, 'name', e.target.value)}
+                            className="w-full px-3 py-1.5 text-sm border border-neutral-300 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 bg-white"
+                            list="store-items-list"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-neutral-600 mb-1">Price/Pack (₦)</label>
+                          <input
+                            type="number"
+                            placeholder="Price"
+                            required
+                            min="0"
+                            value={item.price}
+                            onChange={(e) => updateDeliveryItemField(idx, 'price', e.target.value === '' ? '' : Number(e.target.value))}
+                            className="w-full px-3 py-1.5 text-sm border border-neutral-300 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-neutral-600 mb-1">Qty (Packs)</label>
+                          <input
+                            type="number"
+                            placeholder="Qty"
+                            required
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => updateDeliveryItemField(idx, 'quantity', e.target.value === '' ? '' : Number(e.target.value))}
+                            className="w-full px-3 py-1.5 text-sm border border-neutral-300 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-neutral-600 mb-1">Items/Pack</label>
+                          <input
+                            type="number"
+                            placeholder="Items per Pack"
+                            required
+                            min="1"
+                            value={item.itemQtyPerPack}
+                            onChange={(e) => updateDeliveryItemField(idx, 'itemQtyPerPack', e.target.value === '' ? '' : Number(e.target.value))}
+                            className="w-full px-3 py-1.5 text-sm border border-neutral-300 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 bg-white"
+                          />
+                        </div>
+                        <div className="md:col-span-4 flex justify-between text-xs text-neutral-500 bg-white p-2 rounded border border-neutral-100">
+                          <span>Subtotal Price: ₦ {((Number(item.price) || 0) * (Number(item.quantity) || 0)).toLocaleString()}</span>
+                          <span>Subtotal Store Units: +{((Number(item.quantity) || 0) * (Number(item.itemQtyPerPack) || 1)).toLocaleString()} units</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-1">Price/Pack (₦)</label>
-                  <input type="number" min="0" required value={price} onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-1">Qty (Packs)</label>
-                  <input type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-1">Items/Pack</label>
-                  <input type="number" min="1" required value={itemQtyPerPack} onChange={(e) => setItemQtyPerPack(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
-                </div>
-              </div>
+
               <div>
                 <label className="block text-sm font-semibold text-neutral-700 mb-1">Upload Receipt (Optional)</label>
                 <div className="flex items-center gap-3">
@@ -846,15 +983,19 @@ export default function Suppliers({ department: propDepartment }: SuppliersProps
                 </div>
               </div>
 
-              {/* Preview */}
-              <div className="bg-neutral-50 p-3.5 rounded-lg border border-neutral-200 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm font-medium">
+              {/* Total Preview */}
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm font-semibold text-green-900">
                 <div>
-                  <span className="text-neutral-500">Total Price:</span>
-                  <span className="ml-2 text-neutral-900 font-bold">₦ {((Number(price) || 0) * (Number(quantity) || 0)).toLocaleString()}</span>
+                  <span>Total Delivery Cost:</span>
+                  <span className="ml-2 font-bold text-base">
+                    ₦ {deliveryItems.reduce((sum, item) => sum + ((Number(item.price) || 0) * (Number(item.quantity) || 0)), 0).toLocaleString()}
+                  </span>
                 </div>
                 <div>
-                  <span className="text-neutral-500">Units going to Store:</span>
-                  <span className="ml-2 text-green-600 font-bold">+{(Number(quantity) || 0) * (Number(itemQtyPerPack) || 1)} units</span>
+                  <span>Total Units to Store:</span>
+                  <span className="ml-2 font-bold text-base">
+                    +{deliveryItems.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.itemQtyPerPack) || 1)), 0).toLocaleString()} units
+                  </span>
                 </div>
               </div>
 

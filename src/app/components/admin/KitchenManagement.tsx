@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import KitchenAnalytics from './KitchenAnalytics';
 import Inventory from '../staff/Inventory';
-
 import Expenses from '../staff/Expenses';
+import Suppliers from '../staff/Suppliers';
 import { supabase } from '../../lib/supabase';
 
-type Tab = 'overview' | 'inventory' | 'expenses';
+type Tab = 'overview' | 'inventory' | 'expenses' | 'suppliers';
 
 export default function KitchenManagement() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -64,6 +64,17 @@ export default function KitchenManagement() {
           </button>
 
           <button
+            onClick={() => setActiveTab('suppliers')}
+            className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'suppliers'
+                ? 'border-orange-500 text-orange-600'
+                : 'border-transparent text-neutral-500 hover:text-neutral-700 hover:border-neutral-300'
+            }`}
+          >
+            Suppliers (Deliveries)
+          </button>
+
+          <button
             onClick={() => setActiveTab('expenses')}
             className={`pb-4 px-1 border-b-2 font-medium text-sm transition-colors ${
               activeTab === 'expenses'
@@ -79,6 +90,7 @@ export default function KitchenManagement() {
       <div className="mt-4">
         {activeTab === 'overview' && <KitchenAnalytics hideHeader />}
         {activeTab === 'inventory' && <Inventory isSuperAdmin={isSuperAdmin} />}
+        {activeTab === 'suppliers' && <Suppliers department="kitchen" />}
         {activeTab === 'expenses' && <Expenses />}
       </div>
     </div>

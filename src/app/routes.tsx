@@ -64,6 +64,7 @@ export const router = createBrowserRouter([
       { path: "cash-approval", Component: CashApproval },
       { path: "cash-history", Component: CashHistory },
       { path: "suppliers", Component: SupplierManagement },
+      { path: "supplier-deliveries", Component: Suppliers },
       { path: "creditors", Component: AdminCreditors },
       { path: "expenses", Component: AdminExpenses },
       { path: "bar", Component: BarManagement },

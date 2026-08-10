@@ -12,15 +12,19 @@ import {
   X,
   Receipt,
   UserCheck,
-  Hotel
+  Hotel,
+  Truck
 } from 'lucide-react';
 import { useState } from 'react';
+import { supabase } from '../../lib/supabase';
+import AuthGuard from '../AuthGuard';
 
 const navItems = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/cash-approval', label: 'Cash Approval', icon: CheckCircle },
   { to: '/admin/cash-history', label: 'Cash History', icon: History },
   { to: '/admin/suppliers', label: 'Supplier Management', icon: TrendingUp },
+  { to: '/admin/supplier-deliveries', label: 'Supplier Deliveries', icon: Truck },
   { to: '/admin/creditors', label: 'Creditors', icon: Users },
   { to: '/admin/expenses', label: 'Expenses', icon: Receipt },
   { to: '/admin/bar', label: 'Bar Department', icon: BarChart3 },
@@ -33,7 +37,13 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/', { replace: true });
+  };
+
   return (
+    <AuthGuard allowedRoles={['admin', 'super_admin', 'superadmin']}>
     <div className="h-screen bg-neutral-50 flex overflow-hidden">
       {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex lg:flex-col w-64 bg-white border-r border-neutral-200">
@@ -64,7 +74,7 @@ export default function AdminLayout() {
 
         <div className="p-4 border-t border-neutral-200">
           <button
-            onClick={() => navigate('/')}
+            onClick={handleLogout}
             className="flex items-center gap-3 px-4 py-3 rounded-lg text-neutral-700 hover:bg-neutral-50 w-full transition-colors"
           >
             <LogOut className="w-5 h-5" />
@@ -113,7 +123,7 @@ export default function AdminLayout() {
 
             <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-neutral-200">
               <button
-                onClick={() => navigate('/')}
+                onClick={handleLogout}
                 className="flex items-center gap-3 px-4 py-3 rounded-lg text-neutral-700 hover:bg-neutral-50 w-full transition-colors"
               >
                 <LogOut className="w-5 h-5" />
@@ -131,5 +141,6 @@ export default function AdminLayout() {
         </div>
       </main>
     </div>
+    </AuthGuard>
   );
 }

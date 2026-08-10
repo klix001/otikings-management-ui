@@ -13,6 +13,8 @@ import {
   Book
 } from 'lucide-react';
 import { useState } from 'react';
+import { supabase } from '../../lib/supabase';
+import AuthGuard from '../AuthGuard';
 
 const navItems = [
   { to: '/staff', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -29,7 +31,13 @@ export default function StaffLayout() {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/', { replace: true });
+  };
+
   return (
+    <AuthGuard allowedRoles={['bar', 'admin', 'super_admin', 'superadmin']}>
     <div className="h-screen bg-neutral-50 flex overflow-hidden">
       {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex lg:flex-col w-64 bg-white border-r border-neutral-200">
@@ -60,7 +68,7 @@ export default function StaffLayout() {
 
         <div className="p-4 border-t border-neutral-200">
           <button
-            onClick={() => navigate('/')}
+            onClick={handleLogout}
             className="flex items-center gap-3 px-4 py-3 rounded-lg text-neutral-700 hover:bg-neutral-50 w-full transition-colors"
           >
             <LogOut className="w-5 h-5" />
@@ -109,7 +117,7 @@ export default function StaffLayout() {
 
             <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-neutral-200">
               <button
-                onClick={() => navigate('/')}
+                onClick={handleLogout}
                 className="flex items-center gap-3 px-4 py-3 rounded-lg text-neutral-700 hover:bg-neutral-50 w-full transition-colors"
               >
                 <LogOut className="w-5 h-5" />
@@ -127,5 +135,6 @@ export default function StaffLayout() {
         </div>
       </main>
     </div>
+    </AuthGuard>
   );
 }

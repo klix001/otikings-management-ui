@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Loader2, AlertCircle, Package, FileText, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Edit2, Trash2, Loader2, AlertCircle, Package, FileText, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, UserPlus, X } from 'lucide-react';
 import { useLocation } from 'react-router';
 import { supabase } from '../../lib/supabase';
 
@@ -23,6 +23,13 @@ interface StoreItem {
   loaded: number;
 }
 
+interface DailyCreditorEntry {
+  name: string;
+  amount: number;
+  item: string;
+  phone: string;
+}
+
 interface SalesReport {
   id: number;
   date: string;
@@ -32,7 +39,13 @@ interface SalesReport {
   notPaid: number;
   stockbookSales: number;
   additionsSummary: { name: string; quantity: number }[];
+  dailyCreditors: DailyCreditorEntry[];
   posDetails?: any; // kept for legacy reports before the migration
+}
+
+interface OtherDeduction {
+  label: string;
+  amount: number | '';
 }
 
 interface PosBreakdown {
@@ -43,6 +56,9 @@ interface PosBreakdown {
   kitchen: number;
   lodge: number;
   creditors: string;
+  paidCreditors: number;
+  picnicBirthday: number;
+  otherDeductions: OtherDeduction[];
 }
 
 interface InventoryProps {
@@ -113,6 +129,7 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
 
   const [showAddReportModal, setShowAddReportModal] = useState(false);
+  const [editingReport, setEditingReport] = useState<SalesReport | null>(null);
   const [showPosModal, setShowPosModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -139,17 +156,27 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
   const [posTransfer, setPosTransfer] = useState<number | ''>('');
   const [notPaid, setNotPaid] = useState<number | ''>('');
 
+  // Daily creditors captured via sales report
+  const [dailyCreditors, setDailyCreditors] = useState<DailyCreditorEntry[]>([]);
+  // Existing unpaid creditors for autocomplete
+  const [existingCreditors, setExistingCreditors] = useState<{ name: string; phone: string; amount: number }[]>([]);
+
   // POS Breakdown Fields
   const [posTotal, setPosTotal] = useState<number | ''>('');
   const [posBar, setPosBar] = useState<number | ''>('');
   const [posKitchen, setPosKitchen] = useState<number | ''>('');
   const [posLodge, setPosLodge] = useState<number | ''>('');
   const [posCreditors, setPosCreditors] = useState<string>('');
+  const [posPaidCreditors, setPosPaidCreditors] = useState<number | ''>('');
+  const [posPicnicBirthday, setPosPicnicBirthday] = useState<number | ''>('');
+  const [posOtherDeductions, setPosOtherDeductions] = useState<OtherDeduction[]>([]);
 
   const resetReportForm = (targetDate: string = selectedDate) => {
     setReportDate(targetDate);
     setCashAtHand('');
     setNotPaid('');
+    setDailyCreditors([]);
+    setEditingReport(null);
     // Auto-fill posTransfer from current date's breakdown
     const breakdown = posBreakdowns.find(p => p.date === targetDate);
     if (breakdown) {
@@ -167,14 +194,45 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
       setPosKitchen(existing.kitchen);
       setPosLodge(existing.lodge);
       setPosCreditors(existing.creditors || '');
+      setPosPaidCreditors(existing.paidCreditors || '');
+      setPosPicnicBirthday(existing.picnicBirthday || '');
+      setPosOtherDeductions(existing.otherDeductions && existing.otherDeductions.length > 0
+        ? existing.otherDeductions.map(d => ({ ...d }))
+        : []);
     } else {
       setPosTotal('');
       setPosBar('');
       setPosKitchen('');
       setPosLodge('');
       setPosCreditors('');
+      setPosPaidCreditors('');
+      setPosPicnicBirthday('');
+      setPosOtherDeductions([]);
     }
   };
+
+  // POS Other Deductions helpers
+  const addOtherDeduction = () => {
+    setPosOtherDeductions([...posOtherDeductions, { label: '', amount: '' }]);
+  };
+
+  const removeOtherDeduction = (index: number) => {
+    const updated = [...posOtherDeductions];
+    updated.splice(index, 1);
+    setPosOtherDeductions(updated);
+  };
+
+  const updateOtherDeduction = (index: number, field: keyof OtherDeduction, value: any) => {
+    const updated = [...posOtherDeductions];
+    updated[index] = { ...updated[index], [field]: value };
+    setPosOtherDeductions(updated);
+  };
+
+  // POS Balance calculation
+  const posAllocated = (Number(posBar) || 0) + (Number(posKitchen) || 0) + (Number(posLodge) || 0)
+    + (Number(posPaidCreditors) || 0) + (Number(posPicnicBirthday) || 0)
+    + posOtherDeductions.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+  const posBalance = (Number(posTotal) || 0) - posAllocated;
 
   // ─── Data Fetching ─────────────────────────────────────────────────
   const fetchData = async (showLoading = true, skipCarryForward = false) => {
@@ -366,11 +424,27 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
           notPaid: Number(r.not_paid),
           stockbookSales: Number(r.stockbook_sales || 0),
           additionsSummary: r.additions_summary || [],
+          dailyCreditors: r.daily_creditors || [],
           posDetails: r.pos_details, // legacy
         })));
       }
 
-      // 3b. Fetch POS breakdowns
+      // 3b. Fetch existing unpaid creditors for autocomplete
+      const { data: creditorData } = await supabase
+        .from('creditors')
+        .select('name, phone_number, amount')
+        .eq('department', department)
+        .eq('status', 'UNPAID');
+
+      if (creditorData) {
+        setExistingCreditors(creditorData.map((c: any) => ({
+          name: c.name,
+          phone: c.phone_number || '',
+          amount: Number(c.amount),
+        })));
+      }
+
+      // 3c. Fetch POS breakdowns
       const { data: posData, error: posErr } = await supabase
         .from('pos_breakdowns')
         .select('*')
@@ -387,6 +461,9 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
           kitchen: Number(p.kitchen),
           lodge: Number(p.lodge),
           creditors: p.creditors || '',
+          paidCreditors: Number(p.paid_creditors || 0),
+          picnicBirthday: Number(p.picnic_birthday || 0),
+          otherDeductions: Array.isArray(p.other_deductions) ? p.other_deductions : [],
         })));
       }
 
@@ -802,9 +879,36 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
   };
 
 
+  const addCreditor = () => {
+    setDailyCreditors([...dailyCreditors, { name: '', amount: 0, item: '', phone: '' }]);
+  };
+
+  const removeCreditor = (index: number) => {
+    const updated = [...dailyCreditors];
+    updated.splice(index, 1);
+    setDailyCreditors(updated);
+  };
+
+  const updateCreditor = (index: number, field: keyof DailyCreditorEntry, value: any) => {
+    const updated = [...dailyCreditors];
+    updated[index] = { ...updated[index], [field]: value };
+    
+    // If name is edited, check for match in existingCreditors to autofill phone number
+    if (field === 'name') {
+      const match = existingCreditors.find(ec => ec.name.toLowerCase() === value.toLowerCase());
+      if (match) {
+        updated[index].phone = match.phone;
+      }
+    }
+    setDailyCreditors(updated);
+  };
+
   // ─── Sales Report Logic ────────────────────────────────────────────
   // Auto-calculate total sales from stockbook: sold × unitPrice per item
   const calcStockbookSales = inventory.reduce((sum, item) => sum + (item.sold * item.unitPrice), 0);
+
+  // Auto-calculate debt from daily creditors
+  const calcDailyDebt = dailyCreditors.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
 
   const handleSaveReport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -812,7 +916,8 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
 
     const parsedCash = Number(cashAtHand) || 0;
     const parsedPos = Number(posTransfer) || 0;
-    const parsedNotPaid = Number(notPaid) || 0;
+    // Debt is auto-calculated from daily creditors
+    const parsedNotPaid = calcDailyDebt;
 
     const totalSales = parsedCash + parsedPos + parsedNotPaid;
 
@@ -824,23 +929,116 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
         quantity: item.addition
       }));
 
-    try {
-      const { error: insertErr } = await supabase
-        .from('sales_reports')
-        .insert([{
-          date: reportDate,
-          total_sales: totalSales,
-          cash_at_hand: parsedCash,
-          pos_transfer: parsedPos,
-          not_paid: parsedNotPaid,
-          stockbook_sales: calcStockbookSales,
-          additions_summary: additionsSummary,
-          department,
-        }]);
+    // Clean up creditor entries (filter out empty rows)
+    const cleanedCreditors = dailyCreditors.filter(c => c.name.trim() && (Number(c.amount) || 0) > 0);
 
-      if (insertErr) throw insertErr;
+    try {
+      const reportPayload = {
+        date: reportDate,
+        total_sales: totalSales,
+        cash_at_hand: parsedCash,
+        pos_transfer: parsedPos,
+        not_paid: parsedNotPaid,
+        stockbook_sales: calcStockbookSales,
+        additions_summary: additionsSummary,
+        daily_creditors: cleanedCreditors,
+        department,
+      };
+
+      if (editingReport) {
+        // ─── UPDATE existing report ───
+        const { error: updateErr } = await supabase
+          .from('sales_reports')
+          .update(reportPayload)
+          .eq('id', editingReport.id);
+
+        if (updateErr) throw updateErr;
+
+        // Remove previously synced creditors for this date/department from master table
+        // We only remove creditors that were auto-synced from sales report (identified by matching date)
+        if (editingReport.dailyCreditors && editingReport.dailyCreditors.length > 0) {
+          for (const oldCreditor of editingReport.dailyCreditors) {
+            const { data: existingCred } = await supabase
+              .from('creditors')
+              .select('id, amount, reason')
+              .ilike('name', oldCreditor.name.trim())
+              .eq('department', department)
+              .eq('status', 'UNPAID')
+              .maybeSingle();
+
+            if (existingCred) {
+              const revertedAmount = Math.max(0, Number(existingCred.amount) - (Number(oldCreditor.amount) || 0));
+              if (revertedAmount <= 0) {
+                // Delete if nothing remains
+                await supabase.from('creditors').delete().eq('id', existingCred.id);
+              } else {
+                await supabase.from('creditors')
+                  .update({ amount: revertedAmount })
+                  .eq('id', existingCred.id);
+              }
+            }
+          }
+        }
+      } else {
+        // ─── INSERT new report ───
+        const { error: insertErr } = await supabase
+          .from('sales_reports')
+          .insert([reportPayload]);
+
+        if (insertErr) throw insertErr;
+      }
+
+      // ─── Sync daily creditors to master creditors table ───
+      for (const creditor of cleanedCreditors) {
+        const creditorName = creditor.name.trim();
+        const creditorAmount = Number(creditor.amount) || 0;
+        if (!creditorName || creditorAmount <= 0) continue;
+
+        // Check if this person already has an UNPAID record in this department
+        const { data: existingCred } = await supabase
+          .from('creditors')
+          .select('id, amount, reason')
+          .ilike('name', creditorName)
+          .eq('department', department)
+          .eq('status', 'UNPAID')
+          .maybeSingle();
+
+        if (existingCred) {
+          // Update existing: add to their debt and append a note
+          const newAmount = Number(existingCred.amount) + creditorAmount;
+          const syncNote = `[Added ₦${creditorAmount.toLocaleString()} debt on ${reportDate}]`;
+          const newReason = existingCred.reason
+            ? `${existingCred.reason}\n${syncNote}`
+            : syncNote;
+
+          await supabase
+            .from('creditors')
+            .update({
+              amount: newAmount,
+              reason: newReason,
+              item_bought: creditor.item || null,
+              phone_number: creditor.phone || null,
+            })
+            .eq('id', existingCred.id);
+        } else {
+          // Create new creditor record
+          await supabase
+            .from('creditors')
+            .insert([{
+              name: creditorName,
+              amount: creditorAmount,
+              reason: creditor.item ? `Bought: ${creditor.item}` : null,
+              item_bought: creditor.item || null,
+              phone_number: creditor.phone || null,
+              status: 'UNPAID',
+              date: reportDate,
+              department,
+            }]);
+        }
+      }
 
       setShowAddReportModal(false);
+      setEditingReport(null);
       resetReportForm();
       await fetchData(false);
     } catch (err: any) {
@@ -856,13 +1054,20 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
     setSubmitting(true);
 
     try {
+      const validOthers = posOtherDeductions
+        .filter(d => d.label.trim() && (Number(d.amount) || 0) > 0)
+        .map(d => ({ label: d.label.trim(), amount: Number(d.amount) || 0 }));
+
       const payload = {
         date: selectedDate,
         total_pos: Number(posTotal) || 0,
         bar: Number(posBar) || 0,
         kitchen: Number(posKitchen) || 0,
         lodge: Number(posLodge) || 0,
-        creditors: posCreditors
+        creditors: posCreditors,
+        paid_creditors: Number(posPaidCreditors) || 0,
+        picnic_birthday: Number(posPicnicBirthday) || 0,
+        other_deductions: validOthers,
       };
 
       const existing = posBreakdowns.find(p => p.date === selectedDate);
@@ -886,6 +1091,40 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
       alert(err.message || 'Failed to save POS breakdown.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDeletePosBreakdown = async (pbId: number, date: string) => {
+    // Check if the date is signed
+    const { data: sigData, error: sigErr } = await supabase
+      .from('daily_signatures')
+      .select('*')
+      .eq('date', date)
+      .eq('department', department)
+      .single();
+
+    const isDateSigned = !!sigData && !sigErr;
+    if (isDateSigned && !isSuperAdmin) {
+      alert("This day's records have been signed and locked. Only administrators can delete signed records.");
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete the POS breakdown for ${date}?`)) {
+      return;
+    }
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('pos_breakdowns')
+        .delete()
+        .eq('id', pbId);
+      if (error) throw error;
+      await fetchData(false);
+    } catch (err: any) {
+      console.error('Error deleting POS breakdown:', err);
+      alert(err.message || 'Failed to delete POS breakdown.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1266,7 +1505,9 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
                       <th className="px-6 py-3 text-right text-sm font-semibold text-green-700">Cash</th>
                       <th className="px-6 py-3 text-right text-sm font-semibold text-blue-700">POS/Trans.</th>
                       <th className="px-6 py-3 text-right text-sm font-semibold text-red-700">Debt</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-orange-700">Creditors</th>
                       <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-900">Additions</th>
+                      <th className="px-6 py-3 text-center text-sm font-semibold text-neutral-900">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-200">
@@ -1300,6 +1541,20 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
                           </td>
                           <td className="px-6 py-4 text-sm text-red-700 text-right font-medium">₦ {report.notPaid.toLocaleString()}</td>
                           <td className="px-6 py-4 text-sm text-neutral-600">
+                            {report.dailyCreditors && report.dailyCreditors.length > 0 ? (
+                              <div className="max-w-[180px]">
+                                {report.dailyCreditors.map((c: DailyCreditorEntry, idx: number) => (
+                                  <div key={idx} className="text-xs mb-0.5">
+                                    <span className="font-semibold text-orange-700">{c.name}</span>
+                                    <span className="text-neutral-500 ml-1">₦{(Number(c.amount) || 0).toLocaleString()}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-neutral-400 italic text-xs">None</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-neutral-600">
                             {report.additionsSummary && report.additionsSummary.length > 0 ? (
                               <ul className="list-disc list-inside">
                                 {report.additionsSummary.map((add, idx) => (
@@ -1312,12 +1567,32 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
                               <span className="text-neutral-400 italic">No additions recorded</span>
                             )}
                           </td>
+                          <td className="px-6 py-4 text-center">
+                            <button
+                              onClick={() => {
+                                setEditingReport(report);
+                                setReportDate(report.date);
+                                setCashAtHand(report.cashAtHand);
+                                setPosTransfer(report.posTransfer);
+                                setNotPaid(report.notPaid);
+                                setDailyCreditors(
+                                  report.dailyCreditors && report.dailyCreditors.length > 0
+                                    ? report.dailyCreditors.map((c: DailyCreditorEntry) => ({ ...c }))
+                                    : []
+                                );
+                                setShowAddReportModal(true);
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" /> Edit
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
                     {salesReports.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-6 py-10 text-center text-sm text-neutral-500">
+                        <td colSpan={9} className="px-6 py-10 text-center text-sm text-neutral-500">
                           No sales reports recorded. Click "Add Sales Report" to submit end-of-day sales.
                         </td>
                       </tr>
@@ -1339,25 +1614,66 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
                       <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900">Bar (₦)</th>
                       <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900">Kitchen (₦)</th>
                       <th className="px-6 py-3 text-right text-sm font-semibold text-neutral-900">Lodge (₦)</th>
-                      <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-900">Creditors</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-green-700">Paid Creditors (₦)</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-amber-700">Picnic/Bday (₦)</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-purple-700">Others (₦)</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-neutral-900">Creditors & Notes</th>
+                      <th className="px-6 py-3 text-center text-sm font-semibold text-neutral-900">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-200">
-                    {posBreakdowns.map((pb) => (
-                      <tr key={pb.id} className="hover:bg-neutral-50 transition-colors">
-                        <td className="px-6 py-4 text-sm font-semibold text-neutral-900 whitespace-nowrap">{pb.date}</td>
-                        <td className="px-6 py-4 text-sm font-bold text-blue-700 text-right bg-blue-50">
-                          ₦ {pb.totalPos.toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-neutral-700 text-right font-medium">₦ {pb.bar.toLocaleString()}</td>
-                        <td className="px-6 py-4 text-sm text-neutral-700 text-right font-medium">₦ {pb.kitchen.toLocaleString()}</td>
-                        <td className="px-6 py-4 text-sm text-neutral-700 text-right font-medium">₦ {pb.lodge.toLocaleString()}</td>
-                        <td className="px-6 py-4 text-sm text-neutral-600 whitespace-pre-wrap">{pb.creditors || '-'}</td>
-                      </tr>
-                    ))}
+                    {posBreakdowns.map((pb) => {
+                      const totalOthers = pb.otherDeductions?.reduce((sum, d) => sum + (Number(d.amount) || 0), 0) || 0;
+                      const othersSummary = pb.otherDeductions && pb.otherDeductions.length > 0
+                        ? pb.otherDeductions.map(d => `${d.label}: ₦${Number(d.amount).toLocaleString()}`).join(', ')
+                        : '';
+
+                      return (
+                        <tr key={pb.id} className="hover:bg-neutral-50 transition-colors">
+                          <td className="px-6 py-4 text-sm font-semibold text-neutral-900 whitespace-nowrap">{pb.date}</td>
+                          <td className="px-6 py-4 text-sm font-bold text-blue-700 text-right bg-blue-50">
+                            ₦ {pb.totalPos.toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-neutral-700 text-right font-medium">₦ {pb.bar.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-neutral-700 text-right font-medium">₦ {pb.kitchen.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-neutral-700 text-right font-medium">₦ {pb.lodge.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-green-700 text-right font-semibold">₦ {pb.paidCreditors.toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-amber-700 text-right font-semibold">₦ {(pb.picnicBirthday || 0).toLocaleString()}</td>
+                          <td className="px-6 py-4 text-sm text-purple-700 text-right font-semibold" title={othersSummary}>
+                            ₦ {totalOthers.toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-neutral-600">
+                            <div className="whitespace-pre-wrap">{pb.creditors || '-'}</div>
+                            {othersSummary && (
+                              <div className="text-xs text-purple-600 mt-1 font-medium italic">Others: {othersSummary}</div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-center whitespace-nowrap">
+                            <div className="flex justify-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setSelectedDate(pb.date);
+                                  resetPosForm(pb.date);
+                                  setShowPosModal(true);
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-xs font-medium"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" /> Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeletePosBreakdown(pb.id, pb.date)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors text-xs font-medium"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {posBreakdowns.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-6 py-10 text-center text-sm text-neutral-500">
+                        <td colSpan={10} className="px-6 py-10 text-center text-sm text-neutral-500">
                           No POS Breakdowns recorded. Click "Add / Edit POS Breakdown" to submit.
                         </td>
                       </tr>
@@ -1490,8 +1806,10 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
       {/* ─── Add Sales Report Modal ────────────────────────────────── */}
       {showAddReportModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[95vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold text-neutral-900 mb-4">Submit Daily Sales Report</h2>
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full p-6 max-h-[95vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold text-neutral-900 mb-4">
+              {editingReport ? 'Edit Daily Sales Report' : 'Submit Daily Sales Report'}
+            </h2>
             <form onSubmit={handleSaveReport} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-neutral-700 mb-1">Date</label>
@@ -1500,7 +1818,7 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
                 <p className="text-xs text-neutral-500 mt-1">Locked to the active stockbook date ({selectedDate}) to ensure calculations match.</p>
               </div>
 
-              <div className="grid grid-cols-1 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 mb-1">Cash at Hand (₦)</label>
                   <input type="number" min="0" required value={cashAtHand} onChange={(e) => setCashAtHand(e.target.value === '' ? '' : Number(e.target.value))}
@@ -1513,11 +1831,94 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
                     className="w-full px-4 py-2 border border-neutral-300 rounded-lg bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   <p className="text-xs text-neutral-500 mt-1">This value is auto-filled from the POS Breakdown tab for {department}, but you can override it if necessary.</p>
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-1">Not Paid (Debt) (₦)</label>
-                  <input type="number" min="0" required value={notPaid} onChange={(e) => setNotPaid(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full px-4 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              {/* Daily Creditors Mini-Form */}
+              <div className="border-t border-neutral-200 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-bold text-neutral-800">Daily Creditors Breakdown</h3>
+                  <button
+                    type="button"
+                    onClick={addCreditor}
+                    className="flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-xs font-semibold"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Creditor
+                  </button>
+                </div>
+                
+                <datalist id="existing-creditors-list">
+                  {existingCreditors.map((ec, idx) => (
+                    <option key={idx} value={ec.name} />
+                  ))}
+                </datalist>
+
+                {dailyCreditors.length > 0 ? (
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {dailyCreditors.map((cred, idx) => (
+                      <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center bg-neutral-50 p-2 rounded-lg border border-neutral-200" key={idx}>
+                        <div className="w-full sm:flex-1">
+                          <label className="block text-[10px] text-neutral-500 sm:hidden">Name</label>
+                          <input
+                            type="text"
+                            placeholder="Creditor Name"
+                            required
+                            value={cred.name}
+                            onChange={(e) => updateCreditor(idx, 'name', e.target.value)}
+                            className="w-full px-2 py-1 text-sm border border-neutral-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                            list="existing-creditors-list"
+                          />
+                        </div>
+                        <div className="w-full sm:w-28">
+                          <label className="block text-[10px] text-neutral-500 sm:hidden">Amount (₦)</label>
+                          <input
+                            type="number"
+                            placeholder="Amount"
+                            required
+                            min="1"
+                            value={cred.amount || ''}
+                            onChange={(e) => updateCreditor(idx, 'amount', e.target.value === '' ? '' : Number(e.target.value))}
+                            className="w-full px-2 py-1 text-sm border border-neutral-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div className="w-full sm:flex-1">
+                          <label className="block text-[10px] text-neutral-500 sm:hidden">Item Bought</label>
+                          <input
+                            type="text"
+                            placeholder="Item Bought"
+                            value={cred.item}
+                            onChange={(e) => updateCreditor(idx, 'item', e.target.value)}
+                            className="w-full px-2 py-1 text-sm border border-neutral-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div className="w-full sm:flex-1">
+                          <label className="block text-[10px] text-neutral-500 sm:hidden">Phone</label>
+                          <input
+                            type="text"
+                            placeholder="Phone Number"
+                            value={cred.phone}
+                            onChange={(e) => updateCreditor(idx, 'phone', e.target.value)}
+                            className="w-full px-2 py-1 text-sm border border-neutral-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeCreditor(idx)}
+                          className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors self-end sm:self-center"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 bg-neutral-50 border border-dashed border-neutral-300 rounded-lg text-xs text-neutral-500">
+                    No creditors added for today.
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center bg-neutral-100 p-2.5 rounded-lg border border-neutral-200 mt-2 text-sm font-semibold">
+                  <span className="text-neutral-700">Calculated Debt (Not Paid) Total:</span>
+                  <span className="text-red-700 text-base">₦ {calcDailyDebt.toLocaleString()}</span>
                 </div>
               </div>
 
@@ -1532,7 +1933,7 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
 
               {/* Reconciliation preview */}
               {(() => {
-                const received = (Number(cashAtHand) || 0) + (Number(posTransfer) || 0) + (Number(notPaid) || 0);
+                const received = (Number(cashAtHand) || 0) + (Number(posTransfer) || 0) + calcDailyDebt;
                 const diff = received - calcStockbookSales;
                 const isMatch = Math.abs(diff) < 1;
                 return (
@@ -1573,14 +1974,14 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
               </div>
 
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowAddReportModal(false)}
+                <button type="button" onClick={() => { setShowAddReportModal(false); setEditingReport(null); }}
                   className="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors">
                   Cancel
                 </button>
                 <button type="submit" disabled={submitting}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm flex items-center justify-center gap-2 disabled:opacity-75">
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Submit Report
+                  {editingReport ? 'Save Changes' : 'Submit Report'}
                 </button>
               </div>
             </form>
@@ -1622,12 +2023,79 @@ export default function Inventory({ department: propDepartment, isSuperAdmin = f
                     <input type="number" min="0" required value={posLodge} onChange={(e) => setPosLodge(e.target.value === '' ? '' : Number(e.target.value))}
                       className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
                   </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-blue-800 mb-1">Paid Creditors (₦)</label>
+                    <input type="number" min="0" required value={posPaidCreditors} onChange={(e) => setPosPaidCreditors(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-blue-800 mb-1">Picnic/Birthday Rent (₦)</label>
+                    <input type="number" min="0" required value={posPicnicBirthday} onChange={(e) => setPosPicnicBirthday(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white" />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-blue-800 mb-1">Creditor Names & Amounts</label>
+
+                {/* Dynamic Others Section */}
+                <div className="mt-4 border-t border-blue-200 pt-3">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-xs font-semibold text-blue-800">Other Deductions</label>
+                    <button type="button" onClick={addOtherDeduction}
+                      className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1">
+                      <Plus className="w-3.5 h-3.5" /> Add Other
+                    </button>
+                  </div>
+                  
+                  {posOtherDeductions.map((d, index) => (
+                    <div key={index} className="flex gap-2 mb-2 items-center">
+                      <input type="text" placeholder="e.g. Pool Party" required value={d.label}
+                        onChange={(e) => updateOtherDeduction(index, 'label', e.target.value)}
+                        className="flex-1 px-3 py-1.5 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs bg-white" />
+                      <input type="number" min="1" placeholder="Amount (₦)" required value={d.amount}
+                        onChange={(e) => updateOtherDeduction(index, 'amount', e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-32 px-3 py-1.5 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs bg-white" />
+                      <button type="button" onClick={() => removeOtherDeduction(index)}
+                        className="text-red-500 hover:text-red-700 transition-colors p-1">
+                        <Trash2 className="w-3.5 h-3.5 animate-pulse" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold text-blue-800 mb-1">Creditor Names & Notes</label>
                   <textarea value={posCreditors} onChange={(e) => setPosCreditors(e.target.value)}
                     className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
                     placeholder="e.g. John Doe: 2000, Jane Smith: 1500" rows={2} />
+                </div>
+
+                {/* Balance Check Card */}
+                <div className="mt-4 p-3 rounded-lg border bg-white shadow-sm flex flex-col gap-1 text-xs">
+                  <div className="flex justify-between font-medium text-neutral-600">
+                    <span>Total POS:</span>
+                    <span className="font-semibold text-neutral-900">₦ {Number(posTotal || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between font-medium text-neutral-600">
+                    <span>Allocated:</span>
+                    <span className="font-semibold text-neutral-900">₦ {posAllocated.toLocaleString()}</span>
+                  </div>
+                  <div className="border-t border-neutral-100 my-1"></div>
+                  <div className="flex justify-between items-center font-bold text-sm">
+                    <span>Balance:</span>
+                    <span className={posBalance === 0 ? 'text-green-600' : 'text-red-600'}>
+                      ₦ {posBalance.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex justify-center">
+                    {posBalance === 0 ? (
+                      <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-[10px] font-bold uppercase tracking-wider">
+                        ✓ Balanced
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-800 text-[10px] font-bold uppercase tracking-wider">
+                        ✗ Unbalanced (Discrepancy of ₦ {posBalance.toLocaleString()})
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
